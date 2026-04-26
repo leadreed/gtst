@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gsts"
+version = "0.1.0"
+description = "Filesystem-native asset versioning for small studio workflows."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  { name = "GSTS Contributors" }
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
