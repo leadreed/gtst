@@ -239,7 +239,7 @@ class GstsRoot:
 
     def asset_dir_from_path(self, path: str | Path) -> str:
         resolved = Path(path).expanduser().resolve()
-        version_dir = self.version_dir_from_path(resolved)
+        version_dir = Path(self.version_dir_from_path(resolved))
         return str(version_dir.parent.resolve())
 
     def version_dir_from_path(self, path: str | Path) -> str:
@@ -265,7 +265,7 @@ class GstsRoot:
         parts = relative.parts
         if len(parts) != len(self.config.schema):
             raise GstsPathError(f"Path does not match GSTS schema: {asset_dir}")
-        return dict(zip(self.config.schema, parts, strict=True))
+        return dict(zip(self.config.schema, parts))
 
     def _merge_facets(
         self,
