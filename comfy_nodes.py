@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import mimetypes
 import os
 from pathlib import Path
 import shutil
@@ -18,8 +19,29 @@ DEFAULT_TEXT_EXTENSION = ".txt"
 DEFAULT_IMAGE_EXTENSION = ".png"
 ASSET_REF_TYPE = "GTST_ASSET_REF"
 FACET_WIDGETS = ("project", "tree", "asset", "variant", "subvariant")
+ASSET_REF_SUGGESTION_WIDGETS = (*FACET_WIDGETS, "version", "tag")
 WIDGET_TO_SCHEMA_FIELD = {"subvariant": "subVariant"}
 SCHEMA_TO_WIDGET_FIELD = {"subVariant": "subvariant"}
+BROWSER_MODES = ("latest only", "all versions", "tagged")
+BROWSER_RESULT_LIMIT = 200
+TEXT_PREVIEW_LIMIT = 500
+IMAGE_EXTENSIONS = {".apng", ".avif", ".bmp", ".gif", ".jpeg", ".jpg", ".png", ".webp"}
+VIDEO_EXTENSIONS = {".m4v", ".mov", ".mp4", ".ogg", ".ogv", ".webm"}
+TEXT_EXTENSIONS = {
+    ".cfg",
+    ".csv",
+    ".json",
+    ".log",
+    ".md",
+    ".py",
+    ".text",
+    ".toml",
+    ".tsv",
+    ".txt",
+    ".xml",
+    ".yaml",
+    ".yml",
+}
 
 
 def _root() -> GtstRoot:
@@ -60,6 +82,17 @@ def _asset_inputs() -> dict[str, tuple[str, dict[str, object]]]:
         "subvariant": _facet_input(
             "SubVariant facet value.", options["subVariant"], "default"
         ),
+    }
+
+
+def _browser_asset_inputs() -> dict[str, tuple[str, dict[str, object]]]:
+    options = _facet_options()
+    return {
+        "project": _facet_input("Project facet value.", options["project"]),
+        "tree": _facet_input("Tree facet value.", options["tree"]),
+        "asset": _facet_input("Asset facet value.", options["asset"]),
+        "variant": _facet_input("Variant facet value.", options["variant"]),
+        "subvariant": _facet_input("SubVariant facet value.", options["subVariant"]),
     }
 
 
@@ -161,10 +194,55 @@ def _prior_facets_for_field(
     return prior
 
 
+def _complete_facets_from_widget_values(
+    root: GtstRoot, values: dict[str, str]
+) -> dict[str, str] | None:
+    facets: dict[str, str] = {}
+    for schema_field in root.config.schema:
+        widget_name = _widget_field(schema_field)
+        value = str(values.get(widget_name, values.get(schema_field, ""))).strip()
+        if not value:
+            return None
+        facets[schema_field] = value
+    return facets
+
+
+def _tag_suggestions(root: GtstRoot, facets: dict[str, str], version: str = "") -> list[str]:
+    if version:
+        return root.list_tags(version=version, facets=facets)
+
+    tags = set(root.list_tags(facets=facets))
+    for asset_version in root.list_versions(facets=facets):
+        tags.update(root.list_tags(version=asset_version, facets=facets))
+    return sorted(tags)
+
+
 def facet_suggestions_payload(
     field: str, values: dict[str, str] | None = None
 ) -> dict[str, Any]:
     root = _root()
+    if field == "version":
+        facets = _complete_facets_from_widget_values(root, values or {})
+        suggestions = [] if facets is None else root.list_versions(facets=facets)
+        return {
+            "root_path": str(root.path),
+            "field": field,
+            "schema_field": field,
+            "facets": facets or {},
+            "values": suggestions,
+        }
+    if field == "tag":
+        facets = _complete_facets_from_widget_values(root, values or {})
+        version = str((values or {}).get("version", "")).strip()
+        suggestions = [] if facets is None else _tag_suggestions(root, facets, version)
+        return {
+            "root_path": str(root.path),
+            "field": field,
+            "schema_field": field,
+            "facets": facets or {},
+            "values": suggestions,
+        }
+
     schema_field = _schema_field(field)
     prior = _prior_facets_for_field(root, schema_field, values or {})
     suggestions = [] if prior is None else root.list_values(schema_field, facets=prior)
@@ -254,6 +332,203 @@ def _metadata(root: GtstRoot, file_path: str) -> dict[str, Any]:
 
 def _metadata_json(root: GtstRoot, file_path: str) -> str:
     return json.dumps(_metadata(root, file_path), indent=2, sort_keys=True)
+
+
+def _browser_filter_facets(
+    root: GtstRoot, values: dict[str, str] | None = None
+) -> dict[str, str]:
+    filters: dict[str, str] = {}
+    for schema_field in root.config.schema:
+        widget_name = _widget_field(schema_field)
+        value = str(
+            (values or {}).get(widget_name, (values or {}).get(schema_field, ""))
+        ).strip()
+        if value:
+            filters[schema_field] = value
+    return filters
+
+
+def _iter_browser_facets(
+    root: GtstRoot, filters: dict[str, str]
+) -> list[dict[str, str]]:
+    matches: list[dict[str, str]] = []
+
+    def walk(depth: int, base: Path, facets: dict[str, str]) -> None:
+        if depth >= len(root.config.schema):
+            if any(
+                child.is_dir()
+                and root._version_number_from_name(child.name) is not None
+                for child in base.iterdir()
+            ):
+                matches.append(dict(facets))
+            return
+
+        field = root.config.schema[depth]
+        expected = filters.get(field)
+        if expected:
+            candidate = base / expected
+            if candidate.is_dir():
+                walk(depth + 1, candidate, {**facets, field: expected})
+            return
+
+        if not base.is_dir():
+            return
+        for child in sorted(base.iterdir(), key=lambda path: path.name):
+            if child.is_dir():
+                walk(depth + 1, child, {**facets, field: child.name})
+
+    walk(0, root.path, {})
+    return matches
+
+
+def _path_inside_root(root: GtstRoot, file_path: str | Path) -> Path:
+    resolved = Path(file_path).expanduser().resolve()
+    if root.path not in [resolved, *resolved.parents]:
+        raise ValueError(f"Path is not inside GTST_ROOT: {resolved}")
+    return resolved
+
+
+def _media_type(file_path: str | Path) -> str:
+    extension = Path(file_path).suffix.lower()
+    if extension in IMAGE_EXTENSIONS:
+        return "image"
+    if extension in VIDEO_EXTENSIONS:
+        return "video"
+    if extension in TEXT_EXTENSIONS:
+        return "text"
+    mime_type, _ = mimetypes.guess_type(str(file_path))
+    if mime_type and mime_type.startswith("text/"):
+        return "text"
+    return "file"
+
+
+def _text_preview(file_path: str | Path) -> str:
+    path = Path(file_path)
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    if len(text) <= TEXT_PREVIEW_LIMIT:
+        return text
+    return text[:TEXT_PREVIEW_LIMIT].rstrip() + "..."
+
+
+def _browser_item(root: GtstRoot, file_path: str) -> dict[str, Any]:
+    metadata = _metadata(root, file_path)
+    facets = metadata["facets"]
+    media_type = _media_type(file_path)
+    label = " / ".join(
+        [
+            str(facets.get("asset", Path(file_path).stem)),
+            str(facets.get("variant", "")),
+            str(facets.get("subVariant", "")),
+            str(metadata["version"]),
+        ]
+    )
+    label = " / ".join(part for part in label.split(" / ") if part)
+    item: dict[str, Any] = {
+        "asset_ref": _asset_ref(
+            root,
+            facets,
+            version=str(metadata["version"]),
+            file_path=file_path,
+        ),
+        "root_path": str(root.path),
+        "facets": facets,
+        "version": metadata["version"],
+        "file_path": file_path,
+        "metadata": metadata,
+        "tags": metadata["tags"],
+        "media_type": media_type,
+        "label": label,
+        "subtitle": str(Path(file_path).name),
+    }
+    if media_type == "text":
+        item["preview_text"] = _text_preview(file_path)
+    return item
+
+
+def _browser_paths_for_facets(
+    root: GtstRoot, facets: dict[str, str], mode: str, version: str, tag: str
+) -> list[str]:
+    if version:
+        try:
+            file_path = root.get_version(version=version, facets=facets)
+        except GtstError:
+            return []
+        if tag and tag not in root.list_tags(version=version, facets=facets):
+            return []
+        return [file_path]
+
+    if mode == "tagged":
+        if not tag:
+            return []
+        return root.find_by_tag(tag, facets=facets)
+
+    if mode == "all versions":
+        paths: list[str] = []
+        for asset_version in root.list_versions(facets=facets):
+            if tag and tag not in root.list_tags(version=asset_version, facets=facets):
+                continue
+            paths.append(root.get_version(version=asset_version, facets=facets))
+        return paths
+
+    try:
+        if tag:
+            return [root.get_latest_by_tag(tag, facets=facets)]
+        return [root.get_current(facets=facets)]
+    except GtstError:
+        return []
+
+
+def browser_results_payload(
+    mode: str,
+    values: dict[str, str] | None = None,
+    *,
+    limit: int = BROWSER_RESULT_LIMIT,
+) -> dict[str, Any]:
+    root = _root()
+    mode = mode if mode in BROWSER_MODES else "latest only"
+    filters = _browser_filter_facets(root, values)
+    version = str((values or {}).get("version", "")).strip()
+    tag = str((values or {}).get("tag", "")).strip()
+    items: list[dict[str, Any]] = []
+    capped = False
+
+    for facets in _iter_browser_facets(root, filters):
+        for file_path in _browser_paths_for_facets(root, facets, mode, version, tag):
+            try:
+                items.append(_browser_item(root, file_path))
+            except GtstError:
+                continue
+            if len(items) >= limit:
+                capped = True
+                break
+        if capped:
+            break
+
+    return {
+        "mode": mode,
+        "root_path": str(root.path),
+        "filters": filters,
+        "limit": limit,
+        "capped": capped,
+        "items": items,
+    }
+
+
+def selected_browser_asset(selected_file_path: str) -> tuple[dict[str, Any], str, str]:
+    selected = selected_file_path.strip()
+    if not selected:
+        raise ValueError("No GTST browser preview selected.")
+    root = _root()
+    file_path = str(_path_inside_root(root, selected))
+    if not Path(file_path).is_file():
+        raise ValueError(f"Selected GTST browser file does not exist: {file_path}")
+    facets = root.facets_from_path(file_path)
+    version = root.version_from_path(file_path)
+    asset_ref = _asset_ref(root, facets, version=version, file_path=file_path)
+    return asset_ref, file_path, json.dumps(asset_ref["metadata"], indent=2, sort_keys=True)
 
 
 def _split_tags(tags: str) -> list[str]:
@@ -693,63 +968,57 @@ class TagGtstVersion:
 
 
 class BrowseGtst:
-    """List GTST facet values or asset versions as JSON."""
+    """Browse GTST assets and output the selected concrete version."""
 
     CATEGORY = CATEGORY
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("json",)
+    RETURN_TYPES = (ASSET_REF_TYPE, "STRING", "STRING")
+    RETURN_NAMES = ("asset_ref", "file_path", "metadata_json")
     FUNCTION = "browse"
 
     @classmethod
     def INPUT_TYPES(cls) -> dict[str, dict[str, object]]:
         return {
             "required": {
-                "mode": (["values", "versions"], {"default": "values"}),
-                "partial_query": (
+                "mode": (list(BROWSER_MODES), {"default": "latest only"}),
+                **_browser_asset_inputs(),
+                "version": _version_input(),
+                "tag": _tag_input(),
+                "selected_file_path": (
                     "STRING",
                     {
                         "default": "",
-                        "tooltip": "For values: slash path before the facet to list.",
+                        "tooltip": "Selected browser preview file path.",
                     },
                 ),
-                **_asset_inputs(),
+                "preview_item_size": (
+                    "INT",
+                    {
+                        "default": 140,
+                        "min": 80,
+                        "max": 240,
+                        "step": 1,
+                        "display": "slider",
+                        "tooltip": "Preview tile size in the browser grid.",
+                    },
+                ),
             }
         }
 
     def browse(
         self,
         mode: str,
-        partial_query: str,
         project: str,
         tree: str,
         asset: str,
         variant: str,
         subvariant: str,
-    ) -> tuple[str]:
-        root = _root()
-        if mode == "versions":
-            facets = _facets(project, tree, asset, variant, subvariant)
-            payload: dict[str, Any] = {
-                "mode": mode,
-                "root_path": str(root.path),
-                "facets": facets,
-                "versions": root.list_versions(facets=facets),
-            }
-        else:
-            parts = [part for part in partial_query.strip("/").split("/") if part]
-            if len(parts) >= len(root.config.schema):
-                raise ValueError("partial_query must be shorter than the GTST schema.")
-            facets = dict(zip(root.config.schema, parts))
-            field = root.config.schema[len(parts)]
-            payload = {
-                "mode": "values",
-                "root_path": str(root.path),
-                "partial_query": "/".join(parts),
-                "field": field,
-                "facets": facets,
-                "values": root.list_values(field, facets=facets),
-            }
-        return (json.dumps(payload, indent=2, sort_keys=True),)
+        version: str,
+        tag: str,
+        selected_file_path: str,
+        preview_item_size: int,
+    ) -> dict[str, Any]:
+        del mode, project, tree, asset, variant, subvariant, version, tag, preview_item_size
+        return _output(selected_browser_asset(selected_file_path))
 
 
 NODE_CLASS_MAPPINGS = {

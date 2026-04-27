@@ -16,7 +16,9 @@ from comfy_nodes import (
     SaveGtstText,
     SaveGtstVideo,
     TagGtstVersion,
+    browser_results_payload,
     facet_suggestions_payload,
+    selected_browser_asset,
 )
 
 
@@ -196,42 +198,113 @@ def test_video_nodes_publish_and_load_path(tmp_path: Path, monkeypatch: Any) -> 
     assert LoadGtstVideo().load(published_ref)["result"][0] == published
 
 
-def test_browse_lists_values_and_versions(tmp_path: Path, monkeypatch: Any) -> None:
+def test_browser_latest_prefers_ready_then_current(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
     asset_ref = make_ref(tmp_path, monkeypatch, tree="texts", asset="caption01")
-    SaveGtstText().save(
-        "caption",
+    first_ref, first_path, _, _ = SaveGtstText().save(
+        "first caption",
         asset_ref,
         "",
         False,
         "",
+    )["result"]
+    second_ref, second_path, _, _ = SaveGtstText().save(
+        "second caption",
+        asset_ref,
+        "",
+        False,
+        "",
+    )["result"]
+
+    current = browser_results_payload("latest only", {"project": "project1"})
+    assert [item["file_path"] for item in current["items"]] == [second_path]
+
+    MarkGtstReady().mark_ready(second_ref, "v001")
+    ready = browser_results_payload("latest only", {"project": "project1"})
+    assert [item["file_path"] for item in ready["items"]] == [first_path]
+    assert ready["items"][0]["asset_ref"]["version"] == first_ref["version"]
+
+
+def test_browser_all_versions_and_tagged_filter(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    asset_ref = make_ref(tmp_path, monkeypatch, tree="texts", asset="caption01")
+    first_path = SaveGtstText().save("first", asset_ref, "", False, "")["result"][1]
+    second_path = SaveGtstText().save("second", asset_ref, "", False, "")["result"][1]
+    TagGtstVersion().tag_version(asset_ref, "v001", "selected")
+
+    values = {
+        "project": "project1",
+        "tree": "texts",
+        "asset": "caption01",
+    }
+    all_versions = browser_results_payload("all versions", values)
+    assert [item["file_path"] for item in all_versions["items"]] == [
+        first_path,
+        second_path,
+    ]
+
+    tagged = browser_results_payload("tagged", {**values, "tag": "selected"})
+    assert [item["file_path"] for item in tagged["items"]] == [first_path]
+    assert browser_results_payload("tagged", values)["items"] == []
+
+
+def test_browser_wildcards_text_preview_and_cap(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    first_ref = make_ref(tmp_path, monkeypatch, tree="texts", asset="caption01")
+    second_ref = make_ref(tmp_path, monkeypatch, tree="texts", asset="caption02")
+    long_text = "word " * 200
+    SaveGtstText().save(long_text, first_ref, "", False, "")
+    SaveGtstText().save("short", second_ref, "", False, "")
+
+    payload = browser_results_payload(
+        "latest only", {"project": "project1", "tree": "texts"}, limit=1
     )
 
-    values = json.loads(
-        BrowseGtst().browse(
-            "values",
-            "project1/texts",
-            "unused",
-            "unused",
-            "unused",
-            "unused",
-            "unused",
-        )[0]
-    )
-    assert values["field"] == "asset"
-    assert values["values"] == ["caption01"]
+    assert payload["capped"] is True
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["media_type"] == "text"
+    assert len(payload["items"][0]["preview_text"]) <= 503
+    assert payload["items"][0]["preview_text"].endswith("...")
 
-    versions = json.loads(
-        BrowseGtst().browse(
-            "versions",
-            "",
-            "project1",
-            "texts",
-            "caption01",
-            "base",
-            "default",
-        )[0]
+
+def test_browser_selection_reconstructs_asset_ref(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    asset_ref = make_ref(tmp_path, monkeypatch, tree="texts", asset="caption01")
+    saved = SaveGtstText().save("caption", asset_ref, "", False, "")["result"][1]
+
+    result = BrowseGtst().browse(
+        "latest only",
+        "project1",
+        "texts",
+        "caption01",
+        "",
+        "",
+        "",
+        "",
+        saved,
+        140,
     )
-    assert versions["versions"] == ["v001"]
+
+    selected_ref, selected_path, selected_metadata = result["result"]
+    assert selected_path == saved
+    assert selected_ref["file_path"] == saved
+    assert selected_ref["version"] == "v001"
+    assert json.loads(selected_metadata)["facets"]["asset"] == "caption01"
+
+
+def test_browser_selection_requires_file(tmp_path: Path, monkeypatch: Any) -> None:
+    monkeypatch.setenv("GTST_ROOT", str(tmp_path / "root"))
+
+    try:
+        selected_browser_asset("")
+    except ValueError as exc:
+        assert "No GTST browser preview selected" in str(exc)
+    else:
+        raise AssertionError("expected missing browser selection to fail")
 
 
 def test_facet_suggestions_are_hierarchy_aware(
@@ -287,6 +360,39 @@ def test_facet_suggestions_map_subvariant_field(
         "variant": "base",
     }
     assert payload["values"] == ["default"]
+
+
+def test_asset_ref_suggestions_include_versions_and_tags(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    asset_ref = make_ref(tmp_path, monkeypatch, tree="images", asset="hero")
+    SaveGtstText().save("first", asset_ref, "", False, "")
+    SaveGtstText().save("second", asset_ref, "", False, "")
+    TagGtstVersion().tag_version(asset_ref, "v001", "selected")
+
+    values = {
+        "project": "project1",
+        "tree": "images",
+        "asset": "hero",
+        "variant": "base",
+        "subvariant": "default",
+    }
+
+    assert facet_suggestions_payload("version", values)["values"] == ["v001", "v002"]
+    assert facet_suggestions_payload("tag", values)["values"] == ["selected"]
+    assert (
+        facet_suggestions_payload("tag", {**values, "version": "v001"})["values"]
+        == ["selected"]
+    )
+
+
+def test_version_suggestions_return_empty_for_incomplete_facets(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    asset_ref = make_ref(tmp_path, monkeypatch, tree="images", asset="hero")
+    SaveGtstText().save("placeholder", asset_ref, "", False, "")
+
+    assert facet_suggestions_payload("version", {"project": "project1"})["values"] == []
 
 
 def test_asset_ref_inputs_are_strings_with_existing_facet_values_only(
