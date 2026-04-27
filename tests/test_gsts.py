@@ -13,6 +13,7 @@ from gsts import (
     GstsTagError,
     GstsVersionError,
 )
+from gsts.cli import main as cli_main
 
 
 def write_source(tmp_path: Path, name: str = "simpleBox.txt", text: str = "box") -> Path:
@@ -262,3 +263,98 @@ def test_path_helpers_resolve_facets_and_version(tmp_path: Path) -> None:
     assert root.version_dir_from_path(published).endswith(
         "/project1/assets/simpleBox/base/default/v001"
     )
+
+
+def test_cli_init_prints_export_suggestion(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root_path = (tmp_path / "root").resolve()
+
+    assert cli_main(["init", str(root_path)]) == 0
+
+    output = capsys.readouterr().out
+
+    assert f"GSTS root: {root_path}" in output
+    assert f"export GSTS_ROOT={root_path}" in output
+
+
+def test_cli_requires_gsts_root(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("GSTS_ROOT", raising=False)
+
+    assert cli_main(["values"]) == 2
+
+    assert "GSTS_ROOT is not set" in capsys.readouterr().err
+
+
+def test_cli_publish_ready_get_values_and_info_json(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = GstsRoot.create(tmp_path / "root")
+    source = write_source(tmp_path, "hero.txt", "hero")
+    monkeypatch.setenv("GSTS_ROOT", str(root.path))
+
+    assert (
+        cli_main(
+            [
+                "publish",
+                str(source),
+                "project1/assets/hero/base/default",
+                "--ready",
+            ]
+        )
+        == 0
+    )
+    published = capsys.readouterr().out.strip()
+    assert published.endswith("/project1/assets/hero/base/default/v001/hero.txt")
+
+    assert cli_main(["get", "project1/assets/hero/base/default/v1"]) == 0
+    assert capsys.readouterr().out.strip() == published
+
+    assert cli_main(["values", "project1/assets"]) == 0
+    assert capsys.readouterr().out.strip() == "hero"
+
+    assert cli_main(["info", "--json", "project1/assets/hero/base/default"]) == 0
+    info = json.loads(capsys.readouterr().out)
+    assert info["errors"] == []
+    assert info["results"][0]["path"] == published
+    assert info["results"][0]["resolved_by"] == "ready"
+    assert (
+        info["results"][0]["version_query"]
+        == "project1/assets/hero/base/default/v001"
+    )
+
+
+def test_cli_ready_and_tag_accept_version_query_and_absolute_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = GstsRoot.create(tmp_path / "root")
+    source = write_source(tmp_path, "hero.txt", "v1")
+    first = root.publish(
+        source,
+        project="project1",
+        tree="assets",
+        asset="hero",
+        variant="base",
+        subVariant="default",
+    )
+    source.write_text("v2", encoding="utf-8")
+    second = root.publish(
+        source,
+        project="project1",
+        tree="assets",
+        asset="hero",
+        variant="base",
+        subVariant="default",
+    )
+    monkeypatch.setenv("GSTS_ROOT", str(root.path))
+
+    assert cli_main(["ready", "project1/assets/hero/base/default/v1"]) == 0
+    assert capsys.readouterr().out.strip() == first
+
+    assert cli_main(["tag", "favorite", second]) == 0
+    assert capsys.readouterr().out.strip() == second
+
+    assert cli_main(["tagged", "favorite", "project1/assets/hero/base/default"]) == 0
+    assert capsys.readouterr().out.strip() == second
