@@ -428,7 +428,6 @@ def _browser_item(root: GtstRoot, file_path: str) -> dict[str, Any]:
             str(facets.get("asset", Path(file_path).stem)),
             str(facets.get("variant", "")),
             str(facets.get("subVariant", "")),
-            str(metadata["version"]),
         ]
     )
     label = " / ".join(part for part in label.split(" / ") if part)
