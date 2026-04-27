@@ -13,7 +13,8 @@ from .validation import validate_name
 CONFIG_FILENAME = "gtst.json"
 DEFAULT_SCHEMA = ["project", "tree", "asset", "variant", "subVariant"]
 DEFAULT_VERSION_WIDTH = 3
-DEFAULT_SINGLE_VERSION_TAGS = ["ready"]
+DEFAULT_READY_TAG_NAME = "ready"
+DEFAULT_SINGLE_VERSION_TAGS: list[str] = []
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,7 @@ class GstsConfig:
 
     schema: list[str] = field(default_factory=lambda: list(DEFAULT_SCHEMA))
     version_width: int = DEFAULT_VERSION_WIDTH
+    ready_tag_name: str = DEFAULT_READY_TAG_NAME
     single_version_tags: list[str] = field(
         default_factory=lambda: list(DEFAULT_SINGLE_VERSION_TAGS)
     )
@@ -34,6 +36,7 @@ class GstsConfig:
     def from_mapping(cls, data: dict[str, Any]) -> "GstsConfig":
         schema = data.get("schema", DEFAULT_SCHEMA)
         version_width = data.get("version_width", DEFAULT_VERSION_WIDTH)
+        ready_tag_name = data.get("ready_tag_name", DEFAULT_READY_TAG_NAME)
         single_version_tags = data.get(
             "single_version_tags", DEFAULT_SINGLE_VERSION_TAGS
         )
@@ -54,6 +57,10 @@ class GstsConfig:
         if version_width < 1:
             raise GstsConfigError("Config field 'version_width' must be at least 1.")
 
+        if not isinstance(ready_tag_name, str):
+            raise GstsConfigError("Config field 'ready_tag_name' must be a string.")
+        validate_name(ready_tag_name, label="ready tag")
+
         if not isinstance(single_version_tags, list) or not all(
             isinstance(item, str) for item in single_version_tags
         ):
@@ -66,6 +73,7 @@ class GstsConfig:
         return cls(
             schema=list(schema),
             version_width=version_width,
+            ready_tag_name=ready_tag_name,
             single_version_tags=list(dict.fromkeys(single_version_tags)),
         )
 
@@ -98,8 +106,12 @@ class GstsConfig:
         return {
             "schema": list(self.schema),
             "version_width": self.version_width,
+            "ready_tag_name": self.ready_tag_name,
             "single_version_tags": list(self.single_version_tags),
         }
 
+    def is_ready_tag(self, tag: str) -> bool:
+        return tag == self.ready_tag_name
+
     def is_single_version_tag(self, tag: str) -> bool:
-        return tag in set(self.single_version_tags)
+        return self.is_ready_tag(tag) or tag in set(self.single_version_tags)

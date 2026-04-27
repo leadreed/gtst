@@ -39,7 +39,8 @@ def test_create_writes_default_config(tmp_path: Path) -> None:
     assert json.loads(config_path.read_text(encoding="utf-8")) == {
         "schema": ["project", "tree", "asset", "variant", "subVariant"],
         "version_width": 3,
-        "single_version_tags": ["ready"],
+        "ready_tag_name": "ready",
+        "single_version_tags": [],
     }
 
 
@@ -49,6 +50,26 @@ def test_open_requires_config(tmp_path: Path) -> None:
 
     with pytest.raises(GstsConfigError, match="config does not exist"):
         GstsRoot(empty_root)
+
+
+def test_old_config_without_ready_tag_name_loads_with_ready_default(tmp_path: Path) -> None:
+    root_path = tmp_path / "root"
+    root_path.mkdir()
+    (root_path / "gtst.json").write_text(
+        json.dumps(
+            {
+                "schema": ["project", "tree", "asset", "variant", "subVariant"],
+                "version_width": 3,
+                "single_version_tags": ["ready"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    root = GstsRoot(root_path)
+
+    assert root.config.ready_tag_name == "ready"
+    assert root.config.is_single_version_tag("ready")
 
 
 def test_publish_allocates_versions_and_preserves_filename(tmp_path: Path) -> None:
@@ -140,6 +161,22 @@ def test_single_version_tag_uses_asset_level_history(tmp_path: Path) -> None:
     assert Path(first).is_file()
 
 
+def test_ready_tag_is_single_version_without_single_version_tags_config(tmp_path: Path) -> None:
+    root = GstsRoot.create(tmp_path / "root")
+    source = write_source(tmp_path, text="v1")
+    first = root.publish(source, **facets())
+    source.write_text("v2", encoding="utf-8")
+    second = root.publish(source, **facets())
+
+    root.tag_version(root.config.ready_tag_name, version=1, **facets())
+    root.tag_version(root.config.ready_tag_name, version=2, **facets())
+
+    assert root.config.single_version_tags == []
+    assert root.get_latest_by_tag("ready", **facets()) == second
+    assert root.find_by_tag("ready", **facets()) == [second]
+    assert Path(first).is_file()
+
+
 def test_multi_version_tags_live_inside_versions(tmp_path: Path) -> None:
     root = GstsRoot.create(tmp_path / "root")
     source = write_source(tmp_path, text="v1")
@@ -153,7 +190,22 @@ def test_multi_version_tags_live_inside_versions(tmp_path: Path) -> None:
     assert tag_one.endswith("/v001/gtst_tags/favorite.gtst")
     assert tag_two.endswith("/v002/gtst_tags/favorite.gtst")
     assert root.find_by_tag("favorite", **facets()) == [first, second]
+    assert root.get_latest_by_tag("favorite", **facets()) == second
     assert root.list_tags(version=1, **facets()) == ["favorite"]
+
+
+def test_get_current_prefers_ready_and_falls_back_to_latest(tmp_path: Path) -> None:
+    root = GstsRoot.create(tmp_path / "root")
+    source = write_source(tmp_path, text="v1")
+    first = root.publish(source, **facets())
+    source.write_text("v2", encoding="utf-8")
+    second = root.publish(source, **facets())
+
+    assert root.get_current(**facets()) == second
+
+    root.tag_version("ready", version=1, **facets())
+
+    assert root.get_current(**facets()) == first
 
 
 def test_single_version_tag_ignores_multi_version_tag_with_same_name(tmp_path: Path) -> None:

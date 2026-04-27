@@ -86,6 +86,16 @@ class GstsRoot:
     ) -> str:
         return self.get_version(version="latest", facets=facets, **facet_values)
 
+    def get_current(
+        self, *, facets: dict[str, str] | None = None, **facet_values: str
+    ) -> str:
+        try:
+            return self.get_tagged_version(
+                self.config.ready_tag_name, facets=facets, **facet_values
+            )
+        except GstsTagError:
+            return self.get_latest(facets=facets, **facet_values)
+
     def get_version(
         self,
         version: str | int,
@@ -145,6 +155,30 @@ class GstsRoot:
         if len(tagged) > 1:
             raise GstsTagError(f"Tag '{tag}' is set on multiple versions.")
         return tagged[0]
+
+    def get_latest_by_tag(
+        self,
+        tag: str,
+        *,
+        facets: dict[str, str] | None = None,
+        **facet_values: str,
+    ) -> str:
+        validate_name(tag, label="tag")
+        asset_dir = self.asset_dir(facets=facets, **facet_values)
+        if self.config.is_single_version_tag(tag):
+            version_number = self._current_single_version_tag(asset_dir, tag)
+            if version_number is None:
+                raise GstsTagError(f"Tag '{tag}' is not set for asset: {asset_dir}")
+            return self.get_version(version=version_number, facets=facets, **facet_values)
+
+        latest_version: str | None = None
+        for version_name in self.list_versions(facets=facets, **facet_values):
+            version_dir = asset_dir / version_name
+            if (version_dir / GTST_TAGS_DIR / f"{tag}.gtst").is_file():
+                latest_version = version_name
+        if latest_version is None:
+            raise GstsTagError(f"Tag '{tag}' is not set for asset: {asset_dir}")
+        return self.get_version(version=latest_version, facets=facets, **facet_values)
 
     def find_by_tag(
         self,
