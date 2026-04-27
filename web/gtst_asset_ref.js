@@ -119,6 +119,10 @@ function startsWithFilter(values, query) {
   );
 }
 
+function activeQuery() {
+  return String(active?.input?.value ?? active?.widget?.value ?? "");
+}
+
 function graphToClient(x, y) {
   const canvas = app.canvas;
   const rect = canvas.canvas.getBoundingClientRect();
@@ -136,6 +140,14 @@ function positionMenu() {
     return;
   }
   const menu = menuElement();
+  if (active.input instanceof HTMLInputElement) {
+    const rect = active.input.getBoundingClientRect();
+    menu.style.left = `${rect.left}px`;
+    menu.style.top = `${rect.bottom + 4}px`;
+    menu.style.width = `${Math.max(140, rect.width)}px`;
+    return;
+  }
+
   const widgetY = active.widget.last_y ?? 0;
   const { x, y, scale } = graphToClient(
     active.node.pos[0] + 8,
@@ -188,7 +200,7 @@ async function refreshSuggestions(immediate = false) {
     if (currentRequest !== requestId || !active) {
       return;
     }
-    menuValues = startsWithFilter(values, String(active.widget.value ?? ""));
+    menuValues = startsWithFilter(values, activeQuery());
     highlightedIndex = 0;
     renderMenu(menuValues);
   };
@@ -204,7 +216,14 @@ function chooseSuggestion(index) {
   if (!active || !menuValues[index]) {
     return;
   }
-  setWidgetValue(active.widget, menuValues[index], active.node);
+  const value = menuValues[index];
+  if (active.input instanceof HTMLInputElement) {
+    active.input.value = value;
+    active.input.dispatchEvent(new Event("input", { bubbles: true }));
+    active.input.dispatchEvent(new Event("change", { bubbles: true }));
+    active.input.focus();
+  }
+  setWidgetValue(active.widget, value, active.node);
   commitFacet(active.node, active.field);
   hideMenu();
 }
@@ -265,7 +284,10 @@ function fieldFromInput(target) {
     return null;
   }
   const label = target.getAttribute("aria-label");
-  return FACET_WIDGETS.includes(label) ? label : null;
+  if (FACET_WIDGETS.includes(label)) {
+    return label;
+  }
+  return active?.field ?? null;
 }
 
 function installDocumentListeners() {
@@ -290,7 +312,9 @@ function installDocumentListeners() {
       return;
     }
     active.input = event.target;
-    setWidgetValue(active.widget, event.target.value, active.node);
+    if (event.target.getAttribute("aria-label")) {
+      setWidgetValue(active.widget, event.target.value, active.node);
+    }
     refreshSuggestions();
   });
 
@@ -330,6 +354,9 @@ function installDocumentListeners() {
     }
     const committed = active;
     window.setTimeout(() => {
+      if (committed.input instanceof HTMLInputElement) {
+        setWidgetValue(committed.widget, committed.input.value, committed.node);
+      }
       commitFacet(committed.node, committed.field);
       hideMenu();
     }, 100);
