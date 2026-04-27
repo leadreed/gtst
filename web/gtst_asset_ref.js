@@ -2,7 +2,9 @@ import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
 
 const FACET_WIDGETS = ["project", "tree", "asset", "variant", "subvariant"];
+const SUGGESTION_WIDGETS = [...FACET_WIDGETS, "version", "tag"];
 const DEFAULTS = { variant: "base", subvariant: "default" };
+const BROWSER_DEFAULTS = {};
 const STYLE_ID = "gtst-facet-autocomplete-style";
 const DEBOUNCE_MS = 150;
 const WIDGET_ROW_HEIGHT = 20;
@@ -13,6 +15,23 @@ let menuValues = [];
 let requestId = 0;
 let debounceTimer = null;
 let widgetClickWrapped = false;
+let promptToken = 0;
+
+function isAssetRefNode(node) {
+  return node?.comfyClass === "GTSTAssetRef" || node?.type === "GTSTAssetRef";
+}
+
+function isBrowserNode(node) {
+  return node?.comfyClass === "BrowseGTST" || node?.type === "BrowseGTST";
+}
+
+function isSuggestionNode(node) {
+  return isAssetRefNode(node) || isBrowserNode(node);
+}
+
+function isSuggestionWidget(widget) {
+  return SUGGESTION_WIDGETS.includes(widget?.name);
+}
 
 function ensureStyles() {
   if (document.getElementById(STYLE_ID)) {
@@ -55,7 +74,8 @@ function ensureStyles() {
 
     .gtst-facet-suggestions button[data-highlighted="true"],
     .gtst-facet-suggestions button:hover {
-      background: var(--content-hover-bg, #444);
+      background: #4f6f8f;
+      color: #f2f7ff;
     }
   `;
   document.head.appendChild(style);
@@ -75,7 +95,12 @@ function menuElement() {
 function inputDefaultForWidget(nodeData, name) {
   const spec = nodeData?.input?.required?.[name];
   const options = Array.isArray(spec) ? spec[1] : null;
-  return options?.default ?? DEFAULTS[name] ?? "";
+  const defaults = nodeData?.name === "BrowseGTST" ? BROWSER_DEFAULTS : DEFAULTS;
+  return options?.default ?? defaults[name] ?? "";
+}
+
+function committedDefaults(node) {
+  return isBrowserNode(node) ? BROWSER_DEFAULTS : DEFAULTS;
 }
 
 function setWidgetValue(widget, value, node) {
@@ -84,9 +109,20 @@ function setWidgetValue(widget, value, node) {
   node?.setDirtyCanvas?.(true, true);
 }
 
+function notifyCommitted(node, field) {
+  if (!isBrowserNode(node)) {
+    return;
+  }
+  window.dispatchEvent(
+    new CustomEvent("gtst:browser-input-committed", {
+      detail: { node, field },
+    })
+  );
+}
+
 function valuesForNode(node) {
   return Object.fromEntries(
-    FACET_WIDGETS.map((name) => [
+    SUGGESTION_WIDGETS.map((name) => [
       name,
       String(node.widgets?.find((widget) => widget.name === name)?.value ?? ""),
     ])
@@ -162,7 +198,14 @@ function positionMenu() {
 function hideMenu() {
   menuValues = [];
   highlightedIndex = 0;
+  requestId += 1;
   menuElement().style.display = "none";
+}
+
+function clearActive() {
+  active = null;
+  promptToken += 1;
+  hideMenu();
 }
 
 function renderMenu(values) {
@@ -197,8 +240,15 @@ async function refreshSuggestions(immediate = false) {
   window.clearTimeout(debounceTimer);
   const run = async () => {
     const currentRequest = ++requestId;
-    const values = await fetchSuggestions(active.field, active.node);
-    if (currentRequest !== requestId || !active) {
+    const field = active.field;
+    const node = active.node;
+    const values = await fetchSuggestions(field, node);
+    if (
+      currentRequest !== requestId ||
+      !active ||
+      active.field !== field ||
+      active.node !== node
+    ) {
       return;
     }
     menuValues = startsWithFilter(values, activeQuery());
@@ -213,9 +263,25 @@ async function refreshSuggestions(immediate = false) {
   }
 }
 
-function chooseSuggestion(index) {
-  if (!active || !menuValues[index]) {
+function closeValueDialog() {
+  const input = active?.input;
+  if (!(input instanceof HTMLInputElement)) {
     return;
+  }
+  const dialog = input.closest(".graphdialog");
+  const okButton = [...(dialog?.querySelectorAll("button") ?? [])].find(
+    (button) => button.textContent?.trim().toLocaleLowerCase() === "ok"
+  );
+  if (okButton) {
+    okButton.click();
+    return;
+  }
+  dialog?.remove();
+}
+
+function applySuggestion(index, { closeDialog = false } = {}) {
+  if (!active || !menuValues[index]) {
+    return false;
   }
   const value = menuValues[index];
   if (active.input instanceof HTMLInputElement) {
@@ -225,22 +291,33 @@ function chooseSuggestion(index) {
     active.input.focus();
   }
   setWidgetValue(active.widget, value, active.node);
-  commitFacet(active.node, active.field);
+  if (FACET_WIDGETS.includes(active.field)) {
+    commitFacet(active.node, active.field);
+  }
+  notifyCommitted(active.node, active.field);
   hideMenu();
+  if (closeDialog) {
+    closeValueDialog();
+  }
+  return true;
+}
+
+function chooseSuggestion(index) {
+  applySuggestion(index, { closeDialog: true });
 }
 
 function candidateNodeForField(field) {
+  if (active?.node?.widgets?.some((widget) => widget.name === field)) {
+    return active.node;
+  }
   const selected = Object.values(app.canvas.selected_nodes ?? {}).find(
-    (node) => node?.comfyClass === "GTSTAssetRef" || node?.type === "GTSTAssetRef"
+    isSuggestionNode
   );
   if (selected?.widgets?.some((widget) => widget.name === field)) {
     return selected;
   }
-  if (active?.node?.widgets?.some((widget) => widget.name === field)) {
-    return active.node;
-  }
   const over = app.canvas.node_over;
-  if (over?.comfyClass === "GTSTAssetRef" || over?.type === "GTSTAssetRef") {
+  if (isSuggestionNode(over)) {
     return over;
   }
   return null;
@@ -251,9 +328,19 @@ function activateFacet(node, field) {
   if (!widget) {
     return false;
   }
-  active = { node, widget, field };
+  active = { node, widget, field, promptToken };
+  hideMenu();
   refreshSuggestions(true);
   return true;
+}
+
+function setPendingPrompt(node, widget) {
+  if (isSuggestionNode(node) && isSuggestionWidget(widget)) {
+    promptToken += 1;
+    active = { node, widget, field: widget.name, promptToken };
+    return;
+  }
+  clearActive();
 }
 
 async function commitFacet(node, field) {
@@ -270,7 +357,8 @@ async function commitFacet(node, field) {
 
     const validValues = await fetchSuggestions(laterField, node);
     const current = String(widget.value ?? "");
-    const fallback = DEFAULTS[laterField] ?? "";
+    const defaults = committedDefaults(node);
+    const fallback = defaults[laterField] ?? "";
     if (!current && !fallback) {
       continue;
     }
@@ -285,10 +373,15 @@ function fieldFromInput(target) {
     return null;
   }
   const label = target.getAttribute("aria-label");
-  if (FACET_WIDGETS.includes(label)) {
+  if (SUGGESTION_WIDGETS.includes(label)) {
     return label;
   }
-  if (target.matches(".graphdialog .value")) {
+  if (
+    target.matches(".graphdialog .value") &&
+    active?.promptToken === promptToken &&
+    isSuggestionNode(active.node) &&
+    isSuggestionWidget(active.widget)
+  ) {
     return active?.field ?? null;
   }
   return null;
@@ -311,9 +404,11 @@ function installDocumentListeners() {
     if (!field) {
       return;
     }
-    const node = active?.field === field ? active.node : candidateNodeForField(field);
-    if (!node || !activateFacet(node, field)) {
-      return;
+    if (!active || active.field !== field) {
+      const node = candidateNodeForField(field);
+      if (!node || !activateFacet(node, field)) {
+        return;
+      }
     }
     active.input = event.target;
     if (event.target.getAttribute("aria-label")) {
@@ -334,22 +429,25 @@ function installDocumentListeners() {
     }
     if (event.key === "ArrowDown" && menuValues.length) {
       event.preventDefault();
+      event.stopPropagation();
       highlightedIndex = (highlightedIndex + 1) % menuValues.length;
       renderMenu(menuValues);
       return;
     }
     if (event.key === "ArrowUp" && menuValues.length) {
       event.preventDefault();
+      event.stopPropagation();
       highlightedIndex =
         (highlightedIndex - 1 + menuValues.length) % menuValues.length;
       renderMenu(menuValues);
       return;
     }
-    if (event.key === "Enter" && menuValues.length) {
+    if (event.key === "Tab" && menuValues.length) {
       event.preventDefault();
-      chooseSuggestion(highlightedIndex);
+      event.stopPropagation();
+      applySuggestion(highlightedIndex);
     }
-  });
+  }, true);
 
   document.addEventListener("focusout", (event) => {
     const field = fieldFromInput(event.target);
@@ -361,7 +459,10 @@ function installDocumentListeners() {
       if (committed.input instanceof HTMLInputElement) {
         setWidgetValue(committed.widget, committed.input.value, committed.node);
       }
-      commitFacet(committed.node, committed.field);
+      if (FACET_WIDGETS.includes(committed.field)) {
+        commitFacet(committed.node, committed.field);
+      }
+      notifyCommitted(committed.node, committed.field);
       hideMenu();
     }, 100);
   });
@@ -384,20 +485,14 @@ function installWidgetClickHook() {
 
   const originalProcessWidgetClick = app.canvas.processWidgetClick;
   app.canvas.processWidgetClick = function (event, node, widget, pointer) {
-    if (
-      (node?.comfyClass === "GTSTAssetRef" || node?.type === "GTSTAssetRef") &&
-      FACET_WIDGETS.includes(widget?.name)
-    ) {
-      active = { node, widget, field: widget.name };
-      refreshSuggestions(true);
-    }
+    setPendingPrompt(node, widget);
     return originalProcessWidgetClick.call(this, event, node, widget, pointer);
   };
 }
 
 function widgetAtCanvasPoint(node, canvasY) {
   return node.widgets?.find((widget) => {
-    if (!FACET_WIDGETS.includes(widget.name)) {
+    if (!isSuggestionWidget(widget)) {
       return false;
     }
     const top = widget.last_y ?? -1;
@@ -410,7 +505,7 @@ function enhanceNodePrototype(nodeType, nodeData) {
   nodeType.prototype.onNodeCreated = function () {
     originalOnNodeCreated?.apply(this, arguments);
 
-    for (const name of FACET_WIDGETS) {
+    for (const name of SUGGESTION_WIDGETS) {
       const widget = this.widgets?.find((candidate) => candidate.name === name);
       if (!widget) {
         continue;
@@ -427,8 +522,7 @@ function enhanceNodePrototype(nodeType, nodeData) {
   nodeType.prototype.onMouseDown = function (event, localPos, graphCanvas) {
     const widget = widgetAtCanvasPoint(this, localPos?.[1] ?? -1);
     if (widget) {
-      active = { node: this, widget, field: widget.name };
-      refreshSuggestions(true);
+      setPendingPrompt(this, widget);
     }
     return originalOnMouseDown?.apply(this, [event, localPos, graphCanvas]);
   };
@@ -444,7 +538,7 @@ app.registerExtension({
   },
 
   async beforeRegisterNodeDef(nodeType, nodeData) {
-    if (nodeData.name !== "GTSTAssetRef") {
+    if (!["GTSTAssetRef", "BrowseGTST"].includes(nodeData.name)) {
       return;
     }
     enhanceNodePrototype(nodeType, nodeData);
