@@ -10,6 +10,7 @@ from gsts import (
     GstsPathError,
     GstsPublishError,
     GstsRoot,
+    GstsRootError,
     GstsTagError,
     GstsVersionError,
 )
@@ -51,6 +52,48 @@ def test_open_requires_config(tmp_path: Path) -> None:
 
     with pytest.raises(GstsConfigError, match="config does not exist"):
         GstsRoot(empty_root)
+
+
+def test_from_env_opens_gsts_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created = GstsRoot.create(tmp_path / "root")
+    monkeypatch.setenv("GSTS_ROOT", str(created.path))
+
+    root = GstsRoot.from_env()
+
+    assert root.path == created.path
+
+
+@pytest.mark.parametrize("value", [None, ""])
+def test_from_env_requires_gsts_root(
+    value: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if value is None:
+        monkeypatch.delenv("GSTS_ROOT", raising=False)
+    else:
+        monkeypatch.setenv("GSTS_ROOT", value)
+
+    with pytest.raises(GstsRootError, match="GSTS_ROOT is not set"):
+        GstsRoot.from_env()
+
+
+def test_from_env_ignores_gtst_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created = GstsRoot.create(tmp_path / "root")
+    monkeypatch.delenv("GSTS_ROOT", raising=False)
+    monkeypatch.setenv("GTST_ROOT", str(created.path))
+
+    with pytest.raises(GstsRootError, match="GSTS_ROOT is not set"):
+        GstsRoot.from_env()
+
+
+def test_root_constructor_requires_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GSTS_ROOT", "/unused")
+
+    with pytest.raises(TypeError):
+        GstsRoot()
 
 
 def test_old_config_without_ready_tag_name_loads_with_ready_default(tmp_path: Path) -> None:

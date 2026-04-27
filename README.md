@@ -44,8 +44,8 @@ Set that variable in your shell:
 export GSTS_ROOT=/path/to/myGTSTroot
 ```
 
-GSTS CLI commands use `GSTS_ROOT` as the active root. `gsts init ROOT` is the
-only command that does not require it.
+GSTS uses `GSTS_ROOT` as the active root for both CLI commands and the Python
+API. `gsts init ROOT` is the only CLI command that does not require it.
 
 ## CLI Usage
 
@@ -205,10 +205,12 @@ The version width controls folder names such as `v001`.
 
 ## Python API
 
+Open the active root from `GSTS_ROOT`:
+
 ```python
 from gsts import GstsRoot
 
-root = GstsRoot.create("/path/to/myGTSTroot")
+root = GstsRoot.from_env()
 
 published = root.publish(
     source="/tmp/simpleBox.txt",
@@ -229,6 +231,14 @@ latest = root.get_latest(
 ```
 
 Both `published` and `latest` are absolute filesystem paths to the asset file.
+
+Create or open a specific root explicitly when setting up a root, writing tests,
+or intentionally bypassing the active root:
+
+```python
+root = GstsRoot.create("/path/to/myGTSTroot")
+root = GstsRoot("/path/to/myGTSTroot")
+```
 
 Facet values can also be passed as a dictionary:
 
