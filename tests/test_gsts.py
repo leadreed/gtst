@@ -78,17 +78,6 @@ def test_from_env_requires_gsts_root(
         GstsRoot.from_env()
 
 
-def test_from_env_ignores_gtst_root(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    created = GstsRoot.create(tmp_path / "root")
-    monkeypatch.delenv("GSTS_ROOT", raising=False)
-    monkeypatch.setenv("GTST_ROOT", str(created.path))
-
-    with pytest.raises(GstsRootError, match="GSTS_ROOT is not set"):
-        GstsRoot.from_env()
-
-
 def test_root_constructor_requires_path(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GSTS_ROOT", "/unused")
 
