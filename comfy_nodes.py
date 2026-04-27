@@ -5,23 +5,18 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import shutil
 import tempfile
 from typing import Any
+import uuid
 
-from gtst import GtstError, GtstRoot, GtstTagError
+from gtst import GtstConfig, GtstError, GtstRoot, GtstTagError
 
 
 CATEGORY = "GTST"
 DEFAULT_TEXT_EXTENSION = ".txt"
 DEFAULT_IMAGE_EXTENSION = ".png"
 ASSET_REF_TYPE = "GTST_ASSET_REF"
-FALLBACK_FACET_VALUES = {
-    "project": ["project1"],
-    "tree": ["assets", "images", "prompts", "texts", "videos"],
-    "asset": ["asset"],
-    "variant": ["base"],
-    "subVariant": ["default"],
-}
 
 
 def _root() -> GtstRoot:
@@ -47,15 +42,27 @@ def _facets(
 def _asset_inputs() -> dict[str, tuple[str, dict[str, object]]]:
     options = _facet_options()
     return {
-        "project": (options["project"], {"tooltip": "Searchable values from GTST_ROOT."}),
-        "tree": (options["tree"], {"tooltip": "Searchable values from GTST_ROOT."}),
-        "asset": (options["asset"], {"tooltip": "Searchable values from GTST_ROOT."}),
-        "variant": (options["variant"], {"tooltip": "Searchable values from GTST_ROOT."}),
-        "subvariant": (
-            options["subVariant"],
-            {"tooltip": "Searchable values from GTST_ROOT."},
+        "project": _facet_input("Project facet value.", options["project"]),
+        "tree": _facet_input("Tree facet value.", options["tree"]),
+        "asset": _facet_input("Asset facet value.", options["asset"]),
+        "variant": _facet_input("Variant facet value.", options["variant"], "base"),
+        "subvariant": _facet_input(
+            "SubVariant facet value.", options["subVariant"], "default"
         ),
     }
+
+
+def _facet_input(
+    tooltip: str, values: list[str], default: str = ""
+) -> tuple[str, dict[str, object]]:
+    return (
+        "STRING",
+        {
+            "default": default,
+            "tooltip": tooltip,
+            "gtstFacetValues": values,
+        },
+    )
 
 
 def _version_input(default: str = "") -> tuple[str, dict[str, object]]:
@@ -94,23 +101,20 @@ def _resolve_file(
 
 
 def _facet_options() -> dict[str, list[str]]:
-    try:
-        root_path = os.environ.get("GTST_ROOT", "").strip()
-        if not root_path:
-            return {key: list(value) for key, value in FALLBACK_FACET_VALUES.items()}
-        root = GtstRoot.create(root_path)
-        options = {
-            field: sorted(_collect_facet_values(root, field))
-            for field in root.config.schema
-        }
-    except Exception:
-        options = {}
+    fields = GtstConfig.default().schema
+    options = {field: [] for field in fields}
+    root_path = os.environ.get("GTST_ROOT", "").strip()
+    if not root_path:
+        return options
 
-    merged: dict[str, list[str]] = {}
-    for field, defaults in FALLBACK_FACET_VALUES.items():
-        values = options.get(field, [])
-        merged[field] = sorted(set(values) | set(defaults))
-    return merged
+    try:
+        root = GtstRoot.create(root_path)
+        for field in fields:
+            if field in root.config.schema:
+                options[field] = sorted(_collect_facet_values(root, field))
+        return options
+    except Exception:
+        return options
 
 
 def _collect_facet_values(root: GtstRoot, field: str) -> set[str]:
@@ -240,6 +244,44 @@ def _default_filename(asset: str, file_name: str, extension: str) -> str:
     return f"{asset}{extension}"
 
 
+def _output(result: tuple[Any, ...], ui: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload: dict[str, Any] = {"result": result}
+    if ui:
+        payload["ui"] = ui
+    return payload
+
+
+def _temp_preview_path(extension: str) -> tuple[Path, str]:
+    try:
+        import folder_paths
+    except ImportError:
+        temp_dir = Path(tempfile.gettempdir())
+    else:
+        temp_dir = Path(folder_paths.get_temp_directory())
+
+    filename = f"gtst_{uuid.uuid4().hex}{extension}"
+    return temp_dir / filename, filename
+
+
+def _preview_image_file_ui(image_path: str) -> dict[str, Any]:
+    source = Path(image_path)
+    extension = source.suffix or DEFAULT_IMAGE_EXTENSION
+    path, filename = _temp_preview_path(extension)
+    shutil.copy2(source, path)
+    return {"images": [{"filename": filename, "subfolder": "", "type": "temp"}]}
+
+
+def _preview_video_ui(video_path: str) -> dict[str, Any]:
+    source = Path(video_path)
+    extension = source.suffix or ".mp4"
+    path, filename = _temp_preview_path(extension)
+    shutil.copy2(source, path)
+    return {
+        "images": [{"filename": filename, "subfolder": "", "type": "temp"}],
+        "animated": (True,),
+    }
+
+
 def _load_image_tensor(file_path: str) -> tuple[Any, Any]:
     try:
         import numpy as np
@@ -316,15 +358,16 @@ class GtstAssetRef:
         subvariant: str,
         version: str,
         tag: str,
-    ) -> tuple[dict[str, Any], str, str]:
+    ) -> dict[str, Any]:
         root = _root()
         facets = _facets(project, tree, asset, variant, subvariant)
         asset_ref = _asset_ref(root, facets, version=version, tag=tag)
-        return (
+        result = (
             asset_ref,
             str(asset_ref["file_path"]),
             json.dumps(asset_ref["metadata"], indent=2, sort_keys=True),
         )
+        return _output(result)
 
 
 class LoadGtstImage:
@@ -343,11 +386,12 @@ class LoadGtstImage:
             }
         }
 
-    def load(self, asset_ref: dict[str, Any]) -> tuple[Any, Any, str, str]:
+    def load(self, asset_ref: dict[str, Any]) -> dict[str, Any]:
         root = _ref_root(asset_ref)
         file_path = _ref_file_path(asset_ref)
         image, mask = _load_image_tensor(file_path)
-        return (image, mask, file_path, _metadata_json(root, file_path))
+        result = (image, mask, file_path, _metadata_json(root, file_path))
+        return _output(result, _preview_image_file_ui(file_path))
 
 
 class SaveGtstImage:
@@ -357,6 +401,7 @@ class SaveGtstImage:
     RETURN_TYPES = (ASSET_REF_TYPE, "STRING", "STRING")
     RETURN_NAMES = ("asset_ref", "published_path", "metadata_json")
     FUNCTION = "save"
+    OUTPUT_NODE = True
 
     @classmethod
     def INPUT_TYPES(cls) -> dict[str, dict[str, object]]:
@@ -380,7 +425,7 @@ class SaveGtstImage:
         file_name: str,
         mark_ready: bool,
         tags: str,
-    ) -> tuple[dict[str, Any], str, str]:
+    ) -> dict[str, Any]:
         root = _ref_root(asset_ref)
         facets = _ref_facets(asset_ref)
         name = _default_filename(facets["asset"], file_name, DEFAULT_IMAGE_EXTENSION)
@@ -388,7 +433,12 @@ class SaveGtstImage:
             source = Path(temp_dir) / name
             _save_image_tensor(image, source)
             published = _publish_existing_file(root, str(source), facets, mark_ready, tags)
-        return (_asset_ref(root, facets, file_path=published), published, _metadata_json(root, published))
+        result = (
+            _asset_ref(root, facets, file_path=published),
+            published,
+            _metadata_json(root, published),
+        )
+        return _output(result, _preview_image_file_ui(published))
 
 
 class LoadGtstText:
@@ -421,9 +471,10 @@ class SaveGtstText:
     """Save text into GTST."""
 
     CATEGORY = CATEGORY
-    RETURN_TYPES = (ASSET_REF_TYPE, "STRING", "STRING")
-    RETURN_NAMES = ("asset_ref", "published_path", "metadata_json")
+    RETURN_TYPES = (ASSET_REF_TYPE, "STRING", "STRING", "STRING")
+    RETURN_NAMES = ("asset_ref", "published_path", "metadata_json", "text")
     FUNCTION = "save"
+    OUTPUT_NODE = True
 
     @classmethod
     def INPUT_TYPES(cls) -> dict[str, dict[str, object]]:
@@ -447,7 +498,7 @@ class SaveGtstText:
         file_name: str,
         mark_ready: bool,
         tags: str,
-    ) -> tuple[dict[str, Any], str, str]:
+    ) -> dict[str, Any]:
         root = _ref_root(asset_ref)
         facets = _ref_facets(asset_ref)
         name = _default_filename(facets["asset"], file_name, DEFAULT_TEXT_EXTENSION)
@@ -455,7 +506,13 @@ class SaveGtstText:
             source = Path(temp_dir) / name
             source.write_text(text, encoding="utf-8")
             published = _publish_existing_file(root, str(source), facets, mark_ready, tags)
-        return (_asset_ref(root, facets, file_path=published), published, _metadata_json(root, published))
+        result = (
+            _asset_ref(root, facets, file_path=published),
+            published,
+            _metadata_json(root, published),
+            text,
+        )
+        return _output(result)
 
 
 class LoadGtstVideo:
@@ -474,10 +531,11 @@ class LoadGtstVideo:
             }
         }
 
-    def load(self, asset_ref: dict[str, Any]) -> tuple[str, str]:
+    def load(self, asset_ref: dict[str, Any]) -> dict[str, Any]:
         root = _ref_root(asset_ref)
         file_path = _ref_file_path(asset_ref)
-        return (file_path, _metadata_json(root, file_path))
+        result = (file_path, _metadata_json(root, file_path))
+        return _output(result, _preview_video_ui(file_path))
 
 
 class SaveGtstVideo:
@@ -487,6 +545,7 @@ class SaveGtstVideo:
     RETURN_TYPES = (ASSET_REF_TYPE, "STRING", "STRING")
     RETURN_NAMES = ("asset_ref", "published_path", "metadata_json")
     FUNCTION = "save"
+    OUTPUT_NODE = True
 
     @classmethod
     def INPUT_TYPES(cls) -> dict[str, dict[str, object]]:
@@ -508,11 +567,16 @@ class SaveGtstVideo:
         asset_ref: dict[str, Any],
         mark_ready: bool,
         tags: str,
-    ) -> tuple[dict[str, Any], str, str]:
+    ) -> dict[str, Any]:
         root = _ref_root(asset_ref)
         facets = _ref_facets(asset_ref)
         published = _publish_existing_file(root, video_path, facets, mark_ready, tags)
-        return (_asset_ref(root, facets, file_path=published), published, _metadata_json(root, published))
+        result = (
+            _asset_ref(root, facets, file_path=published),
+            published,
+            _metadata_json(root, published),
+        )
+        return _output(result, _preview_video_ui(published))
 
 
 class MarkGtstReady:
@@ -522,6 +586,7 @@ class MarkGtstReady:
     RETURN_TYPES = (ASSET_REF_TYPE, "STRING", "STRING")
     RETURN_NAMES = ("asset_ref", "file_path", "metadata_json")
     FUNCTION = "mark_ready"
+    OUTPUT_NODE = True
 
     @classmethod
     def INPUT_TYPES(cls) -> dict[str, dict[str, object]]:
@@ -534,13 +599,18 @@ class MarkGtstReady:
 
     def mark_ready(
         self, asset_ref: dict[str, Any], version: str
-    ) -> tuple[dict[str, Any], str, str]:
+    ) -> dict[str, Any]:
         root = _ref_root(asset_ref)
         facets = _ref_facets(asset_ref)
         version = version.strip() or str(asset_ref["version"])
         root.tag_version(root.config.ready_tag_name, version=version, facets=facets)
         file_path = root.get_version(version=version, facets=facets)
-        return (_asset_ref(root, facets, file_path=file_path), file_path, _metadata_json(root, file_path))
+        result = (
+            _asset_ref(root, facets, file_path=file_path),
+            file_path,
+            _metadata_json(root, file_path),
+        )
+        return _output(result)
 
 
 class TagGtstVersion:
@@ -550,6 +620,7 @@ class TagGtstVersion:
     RETURN_TYPES = (ASSET_REF_TYPE, "STRING", "STRING")
     RETURN_NAMES = ("asset_ref", "file_path", "metadata_json")
     FUNCTION = "tag_version"
+    OUTPUT_NODE = True
 
     @classmethod
     def INPUT_TYPES(cls) -> dict[str, dict[str, object]]:
@@ -563,13 +634,18 @@ class TagGtstVersion:
 
     def tag_version(
         self, asset_ref: dict[str, Any], version: str, tag: str
-    ) -> tuple[dict[str, Any], str, str]:
+    ) -> dict[str, Any]:
         root = _ref_root(asset_ref)
         facets = _ref_facets(asset_ref)
         version = version.strip() or str(asset_ref["version"])
         root.tag_version(tag, version=version, facets=facets)
         file_path = root.get_version(version=version, facets=facets)
-        return (_asset_ref(root, facets, file_path=file_path), file_path, _metadata_json(root, file_path))
+        result = (
+            _asset_ref(root, facets, file_path=file_path),
+            file_path,
+            _metadata_json(root, file_path),
+        )
+        return _output(result)
 
 
 class BrowseGtst:

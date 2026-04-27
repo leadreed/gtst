@@ -288,16 +288,23 @@ Available nodes:
 - `GTST Asset Ref`: build a reusable asset reference from facets plus an
   optional version or tag. Outputs a `GTST_ASSET_REF` handle, the resolved file
   path when a version exists, and metadata JSON.
-- `Load GTST Image`: load a GTST image as ComfyUI `IMAGE` and `MASK`.
+- `Load GTST Image`: load a GTST image as ComfyUI `IMAGE` and `MASK`, with an
+  image preview.
 - `Save GTST Image`: save a ComfyUI image as a new GTST version, optionally
-  marking it ready and adding tags.
+  marking it ready and adding tags. This is an output node and shows an image
+  preview.
 - `Load GTST Text`: load a GTST text asset as a string.
 - `Save GTST Text`: save text as a new GTST version for prompts, captions,
-  JSON, notes, or metadata.
-- `Load GTST Video`: resolve a GTST video asset and output the video file path.
+  JSON, notes, or metadata. This is an output node and also returns the saved
+  text as a normal output for downstream text preview/debug nodes.
+- `Load GTST Video`: resolve a GTST video asset and output the video file path,
+  with a video preview.
 - `Save GTST Video`: publish an existing video file path as a new GTST version.
+  This is an output node and shows a video preview.
 - `Mark GTST Ready`: mark a specific version as the ready version for an asset.
-- `Tag GTST Version`: add a custom tag to a specific version.
+  This is an output node.
+- `Tag GTST Version`: add a custom tag to a specific version. This is an output
+  node.
 - `Browse GTST`: list facet values or asset versions as JSON.
 
 All nodes use `GTST_ROOT`; there are no root path inputs in the ComfyUI nodes.
@@ -305,10 +312,12 @@ Set `GTST_ROOT` in the environment that starts ComfyUI. Missing or
 uninitialized roots are created with the default GTST config.
 
 `GTST Asset Ref` is the source node for the others. Connect its `asset_ref`
-output to load, save, mark-ready, and tag nodes. The facet fields are ComfyUI
-combo dropdowns populated from existing values under `GTST_ROOT`, so they can be
-searched in the ComfyUI dropdown UI. Restart or refresh ComfyUI after changing
-the GTST root contents if you need the dropdown options to reload.
+output to load, save, mark-ready, and tag nodes. The facet fields are editable
+autocomplete fields populated only from existing values under `GTST_ROOT`.
+Focus a field to show suggestions, then type to filter them or enter a new
+value. `variant` defaults to `base`, and `subVariant` defaults to `default`.
+Restart or refresh ComfyUI after changing the GTST root contents if you need the
+suggestions to reload.
 
 Image load/save nodes use the Pillow, NumPy, and Torch libraries already present
 in a normal ComfyUI Python environment.

@@ -58,7 +58,7 @@ def make_ref(
     asset: str = "heroPrompt",
 ) -> dict[str, Any]:
     monkeypatch.setenv("GTST_ROOT", str(tmp_path / "root"))
-    asset_ref, _, _ = GtstAssetRef().resolve(
+    asset_ref = GtstAssetRef().resolve(
         "project1",
         tree,
         asset,
@@ -66,8 +66,27 @@ def make_ref(
         "default",
         "",
         "",
-    )
+    )["result"][0]
     return asset_ref
+
+
+def test_asset_ref_resolve_has_no_preview_ui(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    monkeypatch.setenv("GTST_ROOT", str(tmp_path / "root"))
+
+    result = GtstAssetRef().resolve(
+        "project1",
+        "images",
+        "heroImage",
+        "base",
+        "default",
+        "",
+        "",
+    )
+
+    assert "ui" not in result
+    assert result["result"][1] == ""
 
 
 def test_text_nodes_asset_ref_tag_and_ready(
@@ -75,23 +94,27 @@ def test_text_nodes_asset_ref_tag_and_ready(
 ) -> None:
     asset_ref = make_ref(tmp_path, monkeypatch)
 
-    first_ref, first, first_metadata = SaveGtstText().save(
+    first_result = SaveGtstText().save(
         "first prompt",
         asset_ref,
         "prompt.txt",
         False,
         "draft",
     )
-    second_ref, second, second_metadata = SaveGtstText().save(
+    first_ref, first, first_metadata, _ = first_result["result"]
+    second_result = SaveGtstText().save(
         "second prompt",
         asset_ref,
         "prompt.txt",
         True,
         "approved, favorite",
     )
+    second_ref, second, second_metadata, _ = second_result["result"]
 
     assert first_ref["version"] == "v001"
     assert second_ref["version"] == "v002"
+    assert "ui" not in first_result
+    assert "ui" not in second_result
     assert Path(first).read_text(encoding="utf-8") == "first prompt"
     assert Path(second).read_text(encoding="utf-8") == "second prompt"
     assert json.loads(first_metadata)["version"] == "v001"
@@ -105,7 +128,7 @@ def test_text_nodes_asset_ref_tag_and_ready(
         "default",
         "",
         "",
-    )
+    )["result"]
     assert ref_path == second
     assert current_ref["file_path"] == second
     assert json.loads(ref_metadata)["version"] == "v002"
@@ -118,7 +141,7 @@ def test_text_nodes_asset_ref_tag_and_ready(
         "default",
         "",
         "draft",
-    )
+    )["result"]
     assert tagged_path == first
 
     version_ref, _, _ = GtstAssetRef().resolve(
@@ -129,7 +152,7 @@ def test_text_nodes_asset_ref_tag_and_ready(
         "default",
         "v001",
         "",
-    )
+    )["result"]
     text, loaded_path, _ = LoadGtstText().load(version_ref)
     assert text == "first prompt"
     assert loaded_path == first
@@ -137,7 +160,7 @@ def test_text_nodes_asset_ref_tag_and_ready(
     ready_ref, ready_path, ready_metadata = MarkGtstReady().mark_ready(
         second_ref,
         "v001",
-    )
+    )["result"]
     assert ready_ref["version"] == "v001"
     assert ready_path == first
     assert "ready" in json.loads(ready_metadata)["tags"]
@@ -146,7 +169,7 @@ def test_text_nodes_asset_ref_tag_and_ready(
         ready_ref,
         "v001",
         "selected",
-    )
+    )["result"]
     assert tagged_ready_path == first
     assert "selected" in json.loads(tagged_ready_metadata)["tags"]
 
@@ -156,17 +179,20 @@ def test_video_nodes_publish_and_load_path(tmp_path: Path, monkeypatch: Any) -> 
     source = tmp_path / "clip.mp4"
     source.write_bytes(b"fake video")
 
-    published_ref, published, metadata = SaveGtstVideo().save(
+    result = SaveGtstVideo().save(
         str(source),
         asset_ref,
         True,
         "review",
     )
+    published_ref, published, metadata = result["result"]
 
     assert published_ref["file_path"] == published
+    assert result["ui"]["animated"] == (True,)
+    assert result["ui"]["images"][0]["type"] == "temp"
     assert Path(published).read_bytes() == b"fake video"
     assert json.loads(metadata)["tags"] == ["ready", "review"]
-    assert LoadGtstVideo().load(published_ref)[0] == published
+    assert LoadGtstVideo().load(published_ref)["result"][0] == published
 
 
 def test_browse_lists_values_and_versions(tmp_path: Path, monkeypatch: Any) -> None:
@@ -207,17 +233,23 @@ def test_browse_lists_values_and_versions(tmp_path: Path, monkeypatch: Any) -> N
     assert versions["versions"] == ["v001"]
 
 
-def test_asset_ref_inputs_use_searchable_dropdown_values(
+def test_asset_ref_inputs_are_strings_with_existing_facet_values_only(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    asset_ref = make_ref(tmp_path, monkeypatch, tree="images", asset="heroImage")
+    asset_ref = make_ref(tmp_path, monkeypatch, tree="newTree", asset="newAsset")
     SaveGtstText().save("placeholder", asset_ref, "", False, "")
 
     inputs = GtstAssetRef.INPUT_TYPES()["required"]
 
     assert "root_path" not in inputs
-    assert "project1" in inputs["project"][0]
-    assert "images" in inputs["tree"][0]
-    assert "heroImage" in inputs["asset"][0]
-    assert "base" in inputs["variant"][0]
-    assert "default" in inputs["subvariant"][0]
+    assert inputs["project"][0] == "STRING"
+    assert inputs["tree"][0] == "STRING"
+    assert inputs["asset"][0] == "STRING"
+    assert inputs["variant"][0] == "STRING"
+    assert inputs["subvariant"][0] == "STRING"
+    assert inputs["variant"][1]["default"] == "base"
+    assert inputs["subvariant"][1]["default"] == "default"
+    assert inputs["tree"][1]["gtstFacetValues"] == ["newTree"]
+    assert inputs["asset"][1]["gtstFacetValues"] == ["newAsset"]
+    assert "assets" not in inputs["tree"][1]["gtstFacetValues"]
+    assert "images" not in inputs["tree"][1]["gtstFacetValues"]
