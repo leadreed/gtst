@@ -62,6 +62,20 @@ def _suggestion_widgets(schema: list[str] | None = None) -> tuple[str, ...]:
 ASSET_REF_SUGGESTION_WIDGETS = _suggestion_widgets()
 
 
+def schema_metadata_payload() -> dict[str, Any]:
+    root = _root()
+    schema = list(root.config.schema)
+    return {
+        "root_path": str(root.path),
+        "schema": schema,
+        "facet_fields": schema,
+        "suggestion_fields": list(_suggestion_widgets(schema)),
+        "ready_tag_name": root.config.ready_tag_name,
+        "default_filename_facet": root.config.default_filename_facet,
+        "browser_modes": list(BROWSER_MODES),
+    }
+
+
 def _asset_inputs() -> dict[str, tuple[str, dict[str, object]]]:
     options = _facet_options()
     return {

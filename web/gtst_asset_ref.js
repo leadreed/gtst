@@ -1,14 +1,13 @@
 import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
 
-const FACET_WIDGETS = ["project", "tree", "asset", "variant", "subvariant"];
-const SUGGESTION_WIDGETS = [...FACET_WIDGETS, "version", "tag"];
-const DEFAULTS = { variant: "base", subvariant: "default" };
-const BROWSER_DEFAULTS = {};
 const STYLE_ID = "gtst-facet-autocomplete-style";
 const DEBOUNCE_MS = 150;
 const WIDGET_ROW_HEIGHT = 20;
 
+let facetWidgets = [];
+let suggestionWidgets = ["version", "tag"];
+let schemaPromise = null;
 let active = null;
 let highlightedIndex = 0;
 let menuValues = [];
@@ -30,7 +29,23 @@ function isSuggestionNode(node) {
 }
 
 function isSuggestionWidget(widget) {
-  return SUGGESTION_WIDGETS.includes(widget?.name);
+  return suggestionWidgets.includes(widget?.name);
+}
+
+async function loadSchema() {
+  if (!schemaPromise) {
+    schemaPromise = api.fetchApi("/gtst/schema")
+      .then((response) => (response.ok ? response.json() : {}))
+      .then((payload) => {
+        facetWidgets = Array.isArray(payload.facet_fields) ? payload.facet_fields : [];
+        suggestionWidgets = Array.isArray(payload.suggestion_fields)
+          ? payload.suggestion_fields
+          : [...facetWidgets, "version", "tag"];
+        return payload;
+      })
+      .catch(() => ({}));
+  }
+  return schemaPromise;
 }
 
 function ensureStyles() {
@@ -95,12 +110,11 @@ function menuElement() {
 function inputDefaultForWidget(nodeData, name) {
   const spec = nodeData?.input?.required?.[name];
   const options = Array.isArray(spec) ? spec[1] : null;
-  const defaults = nodeData?.name === "BrowseGTST" ? BROWSER_DEFAULTS : DEFAULTS;
-  return options?.default ?? defaults[name] ?? "";
+  return options?.default ?? "";
 }
 
 function committedDefaults(node) {
-  return isBrowserNode(node) ? BROWSER_DEFAULTS : DEFAULTS;
+  return {};
 }
 
 function setWidgetValue(widget, value, node) {
@@ -122,14 +136,15 @@ function notifyCommitted(node, field) {
 
 function valuesForNode(node) {
   return Object.fromEntries(
-    SUGGESTION_WIDGETS.map((name) => [
+    suggestionWidgets.map((name) => [
       name,
       String(node.widgets?.find((widget) => widget.name === name)?.value ?? ""),
     ])
   );
 }
 
-function suggestionUrl(field, node) {
+async function suggestionUrl(field, node) {
+  await loadSchema();
   const params = new URLSearchParams({ field });
   for (const [name, value] of Object.entries(valuesForNode(node))) {
     params.set(name, value);
@@ -138,7 +153,7 @@ function suggestionUrl(field, node) {
 }
 
 async function fetchSuggestions(field, node) {
-  const response = await api.fetchApi(suggestionUrl(field, node));
+  const response = await api.fetchApi(await suggestionUrl(field, node));
   if (!response.ok) {
     return [];
   }
@@ -291,7 +306,7 @@ function applySuggestion(index, { closeDialog = false } = {}) {
     active.input.focus();
   }
   setWidgetValue(active.widget, value, active.node);
-  if (FACET_WIDGETS.includes(active.field)) {
+  if (facetWidgets.includes(active.field)) {
     commitFacet(active.node, active.field);
   }
   notifyCommitted(active.node, active.field);
@@ -344,12 +359,13 @@ function setPendingPrompt(node, widget) {
 }
 
 async function commitFacet(node, field) {
-  const start = FACET_WIDGETS.indexOf(field) + 1;
+  await loadSchema();
+  const start = facetWidgets.indexOf(field) + 1;
   if (start <= 0) {
     return;
   }
 
-  for (const laterField of FACET_WIDGETS.slice(start)) {
+  for (const laterField of facetWidgets.slice(start)) {
     const widget = node.widgets?.find((candidate) => candidate.name === laterField);
     if (!widget) {
       continue;
@@ -373,7 +389,7 @@ function fieldFromInput(target) {
     return null;
   }
   const label = target.getAttribute("aria-label");
-  if (SUGGESTION_WIDGETS.includes(label)) {
+  if (suggestionWidgets.includes(label)) {
     return label;
   }
   if (
@@ -459,7 +475,7 @@ function installDocumentListeners() {
       if (committed.input instanceof HTMLInputElement) {
         setWidgetValue(committed.widget, committed.input.value, committed.node);
       }
-      if (FACET_WIDGETS.includes(committed.field)) {
+      if (facetWidgets.includes(committed.field)) {
         commitFacet(committed.node, committed.field);
       }
       notifyCommitted(committed.node, committed.field);
@@ -505,7 +521,7 @@ function enhanceNodePrototype(nodeType, nodeData) {
   nodeType.prototype.onNodeCreated = function () {
     originalOnNodeCreated?.apply(this, arguments);
 
-    for (const name of SUGGESTION_WIDGETS) {
+    for (const name of suggestionWidgets) {
       const widget = this.widgets?.find((candidate) => candidate.name === name);
       if (!widget) {
         continue;
@@ -533,11 +549,13 @@ app.registerExtension({
 
   setup() {
     ensureStyles();
+    loadSchema();
     installDocumentListeners();
     installWidgetClickHook();
   },
 
   async beforeRegisterNodeDef(nodeType, nodeData) {
+    await loadSchema();
     if (!["GTSTAssetRef", "BrowseGTST"].includes(nodeData.name)) {
       return;
     }

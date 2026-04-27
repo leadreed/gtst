@@ -20,6 +20,7 @@ from comfy_nodes import (
     TagGtstVersion,
     browser_results_payload,
     facet_suggestions_payload,
+    schema_metadata_payload,
     selected_browser_asset,
 )
 from gtst import GtstRoot
@@ -506,6 +507,25 @@ def test_nodes_use_custom_schema_exact_field_names(
         "shot": "shot010",
         "name": "plateMain",
     }
+
+
+def test_schema_metadata_payload_uses_active_root_schema(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    root = GtstRoot.create(
+        tmp_path / "root",
+        schema=["show", "shot", "name"],
+        default_filename_facet="name",
+    )
+    monkeypatch.setenv("GTST_ROOT", str(root.path))
+
+    payload = schema_metadata_payload()
+
+    assert payload["schema"] == ["show", "shot", "name"]
+    assert payload["facet_fields"] == ["show", "shot", "name"]
+    assert payload["suggestion_fields"] == ["show", "shot", "name", "version", "tag"]
+    assert payload["default_filename_facet"] == "name"
+    assert payload["ready_tag_name"] == "ready"
 
 
 def test_default_filename_facet_errors_when_unresolved(

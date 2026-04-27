@@ -1,20 +1,38 @@
 import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
 
-const FACET_WIDGETS = ["project", "tree", "asset", "variant", "subvariant"];
-const SUGGESTION_WIDGETS = [...FACET_WIDGETS, "version", "tag"];
 const STYLE_ID = "gtst-browser-style";
 const RESULT_LIMIT = 200;
 const DEFAULT_NODE_SIZE = [420, 520];
 const WIDGET_ROW_HEIGHT = 20;
-const BROWSER_MODES = ["current", "latest only", "all versions"];
 
 const browserNodes = new Set();
+let suggestionWidgets = ["version", "tag"];
+let browserModes = ["current", "latest only", "all versions"];
+let schemaPromise = null;
 let animationStarted = false;
 let executionRefreshTimer = null;
 
 function isBrowserNode(node) {
   return node?.comfyClass === "BrowseGTST" || node?.type === "BrowseGTST";
+}
+
+async function loadSchema() {
+  if (!schemaPromise) {
+    schemaPromise = api.fetchApi("/gtst/schema")
+      .then((response) => (response.ok ? response.json() : {}))
+      .then((payload) => {
+        suggestionWidgets = Array.isArray(payload.suggestion_fields)
+          ? payload.suggestion_fields
+          : ["version", "tag"];
+        browserModes = Array.isArray(payload.browser_modes)
+          ? payload.browser_modes
+          : browserModes;
+        return payload;
+      })
+      .catch(() => ({}));
+  }
+  return schemaPromise;
 }
 
 function ensureStyles() {
@@ -231,14 +249,14 @@ function modeWidget(node) {
 function normalizedMode(node) {
   const mode = modeWidget(node);
   sanitizeModeWidget(node, mode);
-  return BROWSER_MODES.includes(String(mode?.value ?? ""))
+  return browserModes.includes(String(mode?.value ?? ""))
     ? String(mode.value)
     : "current";
 }
 
 function browserValues(node) {
   return Object.fromEntries(
-    SUGGESTION_WIDGETS.map((name) => [name, widgetValue(node, name)])
+    suggestionWidgets.map((name) => [name, widgetValue(node, name)])
   );
 }
 
@@ -251,7 +269,8 @@ function tileSize(node) {
   return Math.min(240, Math.max(80, Number.isFinite(value) ? value : 140));
 }
 
-function browserUrl(node) {
+async function browserUrl(node) {
+  await loadSchema();
   const params = new URLSearchParams({
     mode: normalizedMode(node),
     limit: String(RESULT_LIMIT),
@@ -392,7 +411,7 @@ function renderVersionBadge(item) {
   const badge = document.createElement("div");
   badge.className = "gtst-browser-version-badge";
   badge.textContent = displayVersion(item.version);
-  const isReady = Array.isArray(item.tags) && item.tags.includes("ready");
+  const isReady = item.is_ready === true;
   badge.dataset.ready = String(isReady);
 
   if (isReady) {
@@ -457,7 +476,7 @@ async function refreshBrowser(node) {
   updateSelectionStatus(node);
 
   try {
-    const response = await api.fetchApi(browserUrl(node));
+    const response = await api.fetchApi(await browserUrl(node));
     const payload = response.ok ? await response.json() : { items: [] };
     if (requestId !== state.requestId) {
       return;
@@ -593,12 +612,12 @@ function sanitizeModeWidget(node, mode) {
     return;
   }
   mode.options ??= {};
-  mode.options.values = BROWSER_MODES;
+  mode.options.values = browserModes;
   mode.options.serialize = true;
   if (Array.isArray(mode.values)) {
-    mode.values = BROWSER_MODES;
+    mode.values = browserModes;
   }
-  if (!BROWSER_MODES.includes(String(mode.value ?? ""))) {
+  if (!browserModes.includes(String(mode.value ?? ""))) {
     mode.value = "current";
     mode.callback?.("current", app.canvas, node, app.canvas?.graph_mouse, {});
     node.setDirtyCanvas?.(true, true);
@@ -617,11 +636,13 @@ app.registerExtension({
 
   setup() {
     ensureStyles();
+    loadSchema();
     startOverlayLoop();
     installExecutionRefresh();
   },
 
   async beforeRegisterNodeDef(nodeType, nodeData) {
+    await loadSchema();
     if (nodeData.name !== "BrowseGTST") {
       return;
     }

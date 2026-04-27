@@ -14,19 +14,19 @@ if _SRC_DIR.is_dir():
 
 try:
     from .comfy_nodes import (
-        ASSET_REF_SUGGESTION_WIDGETS,
         NODE_CLASS_MAPPINGS,
         NODE_DISPLAY_NAME_MAPPINGS,
         browser_results_payload,
         facet_suggestions_payload,
+        schema_metadata_payload,
     )
 except ImportError:
     from comfy_nodes import (
-        ASSET_REF_SUGGESTION_WIDGETS,
         NODE_CLASS_MAPPINGS,
         NODE_DISPLAY_NAME_MAPPINGS,
         browser_results_payload,
         facet_suggestions_payload,
+        schema_metadata_payload,
     )
 
 
@@ -37,15 +37,33 @@ def _register_routes() -> None:
     except ImportError:
         return
 
+    @PromptServer.instance.routes.get("/gtst/schema")
+    async def gtst_schema(request):  # type: ignore[no-untyped-def]
+        try:
+            payload = schema_metadata_payload()
+        except Exception as exc:
+            payload = {
+                "root_path": "",
+                "schema": [],
+                "facet_fields": [],
+                "suggestion_fields": ["version", "tag"],
+                "ready_tag_name": "",
+                "default_filename_facet": "",
+                "browser_modes": ["current", "latest only", "all versions"],
+                "error": str(exc),
+            }
+        return web.json_response(payload)
+
     @PromptServer.instance.routes.get("/gtst/facet_values")
     async def gtst_facet_values(request):  # type: ignore[no-untyped-def]
         query = request.rel_url.query
         field = str(query.get("field", ""))
-        values = {
-            name: str(query.get(name, ""))
-            for name in ASSET_REF_SUGGESTION_WIDGETS
-        }
         try:
+            schema_payload = schema_metadata_payload()
+            values = {
+                name: str(query.get(name, ""))
+                for name in schema_payload["suggestion_fields"]
+            }
             payload = facet_suggestions_payload(field, values)
         except Exception as exc:
             payload = {
@@ -61,15 +79,16 @@ def _register_routes() -> None:
     async def gtst_browser_results(request):  # type: ignore[no-untyped-def]
         query = request.rel_url.query
         mode = str(query.get("mode", "current"))
-        values = {
-            name: str(query.get(name, ""))
-            for name in ASSET_REF_SUGGESTION_WIDGETS
-        }
         try:
             limit = int(str(query.get("limit", "200")))
         except ValueError:
             limit = 200
         try:
+            schema_payload = schema_metadata_payload()
+            values = {
+                name: str(query.get(name, ""))
+                for name in schema_payload["suggestion_fields"]
+            }
             payload = browser_results_payload(mode, values, limit=limit)
         except Exception as exc:
             payload = {
