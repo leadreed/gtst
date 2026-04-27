@@ -200,11 +200,17 @@ Multi-version tags do not need to be configured.
   "schema": ["project", "tree", "asset", "variant", "subVariant"],
   "version_width": 3,
   "ready_tag_name": "ready",
+  "default_filename_facet": "asset",
   "single_version_tags": []
 }
 ```
 
 The version width controls folder names such as `v001`.
+The default filename facet controls the filename stem used by ComfyUI save nodes
+when their `file_name` input is empty. It must name a field in `schema`.
+
+All config fields shown above are required. Older or hand-written config files
+that omit one of these fields fail to load.
 
 ## Python API
 
@@ -291,16 +297,20 @@ Available nodes:
 - `Load GTST Image`: load a GTST image as ComfyUI `IMAGE` and `MASK`, with an
   image preview.
 - `Save GTST Image`: save a ComfyUI image as a new GTST version, optionally
-  marking it ready and adding tags. This is an output node and shows an image
+  marking it ready and adding tags. If `file_name` is empty, the configured
+  default filename facet is used. This is an output node and shows an image
   preview.
 - `Load GTST Text`: load a GTST text asset as a string.
 - `Save GTST Text`: save text as a new GTST version for prompts, captions,
-  JSON, notes, or metadata. This is an output node and also returns the saved
-  text as a normal output for downstream text preview/debug nodes.
+  JSON, notes, or metadata. If `file_name` is empty, the configured default
+  filename facet is used. This is an output node and also returns the saved text
+  as a normal output for downstream text preview/debug nodes.
 - `Load GTST Video`: resolve a GTST video asset and output the video file path,
   with a video preview.
 - `Save GTST Video`: publish an existing video file path as a new GTST version.
-  This is an output node and shows a video preview.
+  If `file_name` is empty, the configured default filename facet is used with
+  the source video's extension. This is an output node and shows a video
+  preview.
 - `Mark GTST Ready`: mark a specific version as the ready version for an asset.
   This is an output node.
 - `Tag GTST Version`: add a custom tag to a specific version. This is an output
@@ -314,14 +324,13 @@ Set `GTST_ROOT` in the environment that starts ComfyUI. Missing or
 uninitialized roots are created with the default GTST config.
 
 `GTST Asset Ref` is the source node for the others. Connect its `asset_ref`
-output to load, save, mark-ready, and tag nodes. The facet fields are editable
-autocomplete fields populated only from existing values under `GTST_ROOT`.
-Focus a field to show valid suggestions for the facets already set before it,
-then type to filter them or enter a new value. `variant` defaults to `base`, and
-`subVariant` defaults to `default`.
+output to load, save, mark-ready, and tag nodes. The facet fields are generated
+from the active root's `schema` and use the exact schema field names. They are
+editable autocomplete fields populated only from existing values under
+`GTST_ROOT`. Focus a field to show valid suggestions for the facets already set
+before it, then type to filter them or enter a new value.
 
-`Browse GTST` uses the same autocomplete behavior, but `variant` and
-`subVariant` default to empty so they can act as broad filters. Empty browser
+`Browse GTST` uses the same schema-driven autocomplete behavior. Empty browser
 facet fields match any existing value. Its result mode controls which concrete
 versions appear in the preview grid:
 
