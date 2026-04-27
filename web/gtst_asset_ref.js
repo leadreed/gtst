@@ -12,6 +12,7 @@ let highlightedIndex = 0;
 let menuValues = [];
 let requestId = 0;
 let debounceTimer = null;
+let widgetClickWrapped = false;
 
 function ensureStyles() {
   if (document.getElementById(STYLE_ID)) {
@@ -287,7 +288,10 @@ function fieldFromInput(target) {
   if (FACET_WIDGETS.includes(label)) {
     return label;
   }
-  return active?.field ?? null;
+  if (target.matches(".graphdialog .value")) {
+    return active?.field ?? null;
+  }
+  return null;
 }
 
 function installDocumentListeners() {
@@ -372,6 +376,25 @@ function installDocumentListeners() {
   });
 }
 
+function installWidgetClickHook() {
+  if (widgetClickWrapped || !app.canvas?.processWidgetClick) {
+    return;
+  }
+  widgetClickWrapped = true;
+
+  const originalProcessWidgetClick = app.canvas.processWidgetClick;
+  app.canvas.processWidgetClick = function (event, node, widget, pointer) {
+    if (
+      (node?.comfyClass === "GTSTAssetRef" || node?.type === "GTSTAssetRef") &&
+      FACET_WIDGETS.includes(widget?.name)
+    ) {
+      active = { node, widget, field: widget.name };
+      refreshSuggestions(true);
+    }
+    return originalProcessWidgetClick.call(this, event, node, widget, pointer);
+  };
+}
+
 function widgetAtCanvasPoint(node, canvasY) {
   return node.widgets?.find((widget) => {
     if (!FACET_WIDGETS.includes(widget.name)) {
@@ -417,6 +440,7 @@ app.registerExtension({
   setup() {
     ensureStyles();
     installDocumentListeners();
+    installWidgetClickHook();
   },
 
   async beforeRegisterNodeDef(nodeType, nodeData) {
