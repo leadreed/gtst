@@ -1,14 +1,14 @@
-# GSTS Filesystem Asset Management Plan
+# GTST Filesystem Asset Management Plan
 
 Date: 2026-04-26
 
 ## Goal
 
-Build a Python-based asset management system named `gsts` for small studios managing files created from generative AI workflows. GSTS stores everything directly on the filesystem with no database or hidden index. Assets are reusable, versionable, and taggable.
+Build a Python-based asset management system named `gtst`, short for GetThisSaveThat, for small studios managing files created from generative AI workflows. GTST stores everything directly on the filesystem with no database or hidden index. Assets are reusable, versionable, and taggable.
 
 ## Filesystem Model
 
-A GSTS root can contain multiple projects:
+A GTST root can contain multiple projects:
 
 ```text
 /myGTSTroot/
@@ -28,7 +28,7 @@ A GSTS root can contain multiple projects:
                 gtstTag002_ready_002.gtst
 ```
 
-The root config is required and acts as the GSTS marker file:
+The root config is required and acts as the GTST marker file:
 
 ```json
 {
@@ -63,13 +63,13 @@ API calls should accept both keyword facets and `facets={...}`.
 
 Version 1 is Python API only, but the package should be structured so a CLI can be added later.
 
-The package/import name is `gsts`.
+The package/import name is `gtst`.
 
 The API should return absolute filesystem paths, not wrapper objects, for publish and retrieval workflows.
 
 Core operations:
 
-- Create/open a GSTS root.
+- Create/open a GTST root.
 - Publish a single file to a schema-defined asset.
 - Resolve latest and explicit versions.
 - Apply and query tags.
@@ -136,7 +136,7 @@ If a tag is configured as single-version, version-level multi-version instances 
 - Spaces are not allowed.
 - Slashes, `.` segments, `..`, and path traversal are not allowed.
 - Source files must exist and be regular files.
-- GSTS roots must contain a valid config file.
+- GTST roots must contain a valid config file.
 - Config parse errors fail loudly.
 - Malformed version folders and malformed tag files are ignored.
 

@@ -1,4 +1,4 @@
-"""Filesystem locking for GSTS write operations."""
+"""Filesystem locking for GTST write operations."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 import fcntl
 from types import TracebackType
 
-from .errors import GstsLockError
+from .errors import GtstLockError
 
 
 class FileLock:
@@ -24,7 +24,7 @@ class FileLock:
         except OSError as exc:
             self._handle.close()
             self._handle = None
-            raise GstsLockError(f"Could not acquire GSTS lock: {self.path}") from exc
+            raise GtstLockError(f"Could not acquire GTST lock: {self.path}") from exc
         return self
 
     def __exit__(

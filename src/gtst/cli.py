@@ -1,4 +1,4 @@
-"""Command line interface for GSTS."""
+"""Command line interface for GTST."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ import re
 import sys
 from typing import Sequence
 
-from .errors import GstsError, GstsTagError
-from .root import GstsRoot
+from .errors import GtstError, GtstTagError
+from .root import GtstRoot
 
 VERSION_QUERY_PATTERN = re.compile(r"^v\d+$")
 
@@ -24,7 +24,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         args.func(args)
-    except (CliError, GstsError) as exc:
+    except (CliError, GtstError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     return 0
@@ -32,12 +32,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="gsts",
+        prog="gtst",
         description="Filesystem-native asset versioning.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    init_parser = subparsers.add_parser("init", help="Create a GSTS root.")
+    init_parser = subparsers.add_parser("init", help="Create a GTST root.")
     init_parser.add_argument("root")
     init_parser.set_defaults(func=_cmd_init)
 
@@ -83,7 +83,7 @@ def _build_parser() -> argparse.ArgumentParser:
     values_parser.add_argument("partial_query", nargs="?")
     values_parser.set_defaults(func=_cmd_values)
 
-    info_parser = subparsers.add_parser("info", help="Show GSTS info for targets.")
+    info_parser = subparsers.add_parser("info", help="Show GTST info for targets.")
     info_parser.add_argument("--json", action="store_true", dest="as_json")
     info_parser.add_argument("targets", nargs="+")
     info_parser.set_defaults(func=_cmd_info)
@@ -92,10 +92,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _cmd_init(args: argparse.Namespace) -> None:
-    root = GstsRoot.create(args.root)
-    print(f"GSTS root: {root.path}")
+    root = GtstRoot.create(args.root)
+    print(f"GTST root: {root.path}")
     print("Set it as your active root:")
-    print(f"export GSTS_ROOT={root.path}")
+    print(f"export GTST_ROOT={root.path}")
 
 
 def _cmd_publish(args: argparse.Namespace) -> None:
@@ -151,7 +151,7 @@ def _cmd_values(args: argparse.Namespace) -> None:
     root = _load_root_from_env()
     parts = _parse_query_parts(args.partial_query or "")
     if len(parts) >= len(root.config.schema):
-        raise CliError("values expects a partial query. Use 'gsts versions' for versions.")
+        raise CliError("values expects a partial query. Use 'gtst versions' for versions.")
     facets = dict(zip(root.config.schema, parts))
     field = root.config.schema[len(parts)]
     for value in root.list_values(field, facets=facets):
@@ -166,7 +166,7 @@ def _cmd_info(args: argparse.Namespace) -> None:
     for target in args.targets:
         try:
             results.append(_info_for_target(root, target))
-        except (CliError, GstsError) as exc:
+        except (CliError, GtstError) as exc:
             errors.append({"target": target, "error": str(exc)})
 
     if args.as_json:
@@ -183,22 +183,22 @@ def _cmd_info(args: argparse.Namespace) -> None:
         raise CliError(f"{len(errors)} target(s) failed")
 
 
-def _load_root_from_env() -> GstsRoot:
-    return GstsRoot.from_env()
+def _load_root_from_env() -> GtstRoot:
+    return GtstRoot.from_env()
 
 
 def _parse_query_parts(query: str) -> list[str]:
     if not query:
         return []
     if query.startswith("/") or query.endswith("/"):
-        raise CliError("queries must be relative to GSTS_ROOT and cannot start or end with '/'.")
+        raise CliError("queries must be relative to GTST_ROOT and cannot start or end with '/'.")
     parts = query.split("/")
     if any(part == "" for part in parts):
         raise CliError("queries cannot contain empty path parts.")
     return parts
 
 
-def _parse_asset_query(root: GstsRoot, query: str) -> dict[str, str]:
+def _parse_asset_query(root: GtstRoot, query: str) -> dict[str, str]:
     parts = _parse_query_parts(query)
     expected = len(root.config.schema)
     if len(parts) != expected:
@@ -208,7 +208,7 @@ def _parse_asset_query(root: GstsRoot, query: str) -> dict[str, str]:
     return dict(zip(root.config.schema, parts))
 
 
-def _parse_version_query(root: GstsRoot, query: str) -> tuple[dict[str, str], str]:
+def _parse_version_query(root: GtstRoot, query: str) -> tuple[dict[str, str], str]:
     parts = _parse_query_parts(query)
     expected = len(root.config.schema) + 1
     if len(parts) != expected:
@@ -221,7 +221,7 @@ def _parse_version_query(root: GstsRoot, query: str) -> tuple[dict[str, str], st
     return dict(zip(root.config.schema, parts[:-1])), version
 
 
-def _parse_version_target(root: GstsRoot, target: str) -> tuple[dict[str, str], str]:
+def _parse_version_target(root: GtstRoot, target: str) -> tuple[dict[str, str], str]:
     target_path = Path(target).expanduser()
     if target_path.is_absolute():
         facets = root.facets_from_path(target_path)
@@ -230,7 +230,7 @@ def _parse_version_target(root: GstsRoot, target: str) -> tuple[dict[str, str], 
     return _parse_version_query(root, target)
 
 
-def _info_for_target(root: GstsRoot, target: str) -> dict[str, object]:
+def _info_for_target(root: GtstRoot, target: str) -> dict[str, object]:
     target_path = Path(target).expanduser()
     if target_path.is_absolute():
         facets = root.facets_from_path(target_path)
@@ -245,7 +245,7 @@ def _info_for_target(root: GstsRoot, target: str) -> dict[str, object]:
         try:
             asset_file = root.get_latest_by_tag(root.config.ready_tag_name, facets=facets)
             resolved_by = root.config.ready_tag_name
-        except GstsTagError:
+        except GtstTagError:
             asset_file = root.get_latest(facets=facets)
             resolved_by = "latest"
         version = root.version_from_path(asset_file)
@@ -260,7 +260,7 @@ def _info_for_target(root: GstsRoot, target: str) -> dict[str, object]:
 
 
 def _build_info_result(
-    root: GstsRoot,
+    root: GtstRoot,
     target: str,
     asset_file: str,
     facets: dict[str, str],
@@ -302,7 +302,7 @@ def _print_info_result(result: dict[str, object]) -> None:
             print(f"{key}: {value}")
 
 
-def _schema_query(root: GstsRoot) -> str:
+def _schema_query(root: GtstRoot) -> str:
     return "/".join(root.config.schema)
 
 

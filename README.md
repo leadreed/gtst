@@ -1,7 +1,8 @@
-# GSTS
+# GTST
 
-GSTS is a Python filesystem asset manager for small studios that need simple
-versioning and tagging for generated text, images, videos, and arbitrary files.
+GTST, short for GetThisSaveThat, is a Python filesystem asset manager for small
+studios that need simple versioning and tagging for generated text, images,
+videos, and arbitrary files.
 
 The system stores assets directly in folders. There is no database, no hidden
 index, and no content parsing. Published assets are normal files in version
@@ -13,7 +14,7 @@ This repository contains the first Python API and CLI implementation.
 
 ## CLI Setup
 
-Clone the repository, create a virtual environment, and install GSTS in editable
+Clone the repository, create a virtual environment, and install GTST in editable
 mode:
 
 ```bash
@@ -24,106 +25,106 @@ source .venv/bin/activate
 python -m pip install -e ".[test]"
 ```
 
-Create a GSTS root:
+Create a GTST root:
 
 ```bash
-gsts init /path/to/myGTSTroot
+gtst init /path/to/myGTSTroot
 ```
 
 The command prints the root path and the environment variable to use:
 
 ```bash
-GSTS root: /path/to/myGTSTroot
+GTST root: /path/to/myGTSTroot
 Set it as your active root:
-export GSTS_ROOT=/path/to/myGTSTroot
+export GTST_ROOT=/path/to/myGTSTroot
 ```
 
 Set that variable in your shell:
 
 ```bash
-export GSTS_ROOT=/path/to/myGTSTroot
+export GTST_ROOT=/path/to/myGTSTroot
 ```
 
-GSTS uses `GSTS_ROOT` as the active root for both CLI commands and the Python
-API. `gsts init ROOT` is the only CLI command that does not require it.
+GTST uses `GTST_ROOT` as the active root for both CLI commands and the Python
+API. `gtst init ROOT` is the only CLI command that does not require it.
 
 ## CLI Usage
 
 Publish a file to an asset:
 
 ```bash
-gsts publish ./hero.png project1/assets/hero/base/default
+gtst publish ./hero.png project1/assets/hero/base/default
 ```
 
 Publish and mark the new version ready:
 
 ```bash
-gsts publish ./hero.png project1/assets/hero/base/default --ready
+gtst publish ./hero.png project1/assets/hero/base/default --ready
 ```
 
 Get the latest version:
 
 ```bash
-gsts latest project1/assets/hero/base/default
+gtst latest project1/assets/hero/base/default
 ```
 
 Get a specific version:
 
 ```bash
-gsts get project1/assets/hero/base/default/v001
-gsts get project1/assets/hero/base/default/v1
+gtst get project1/assets/hero/base/default/v001
+gtst get project1/assets/hero/base/default/v1
 ```
 
 Mark an existing version ready:
 
 ```bash
-gsts ready project1/assets/hero/base/default/v001
-gsts ready /path/to/myGTSTroot/project1/assets/hero/base/default/v001/hero.png
+gtst ready project1/assets/hero/base/default/v001
+gtst ready /path/to/myGTSTroot/project1/assets/hero/base/default/v001/hero.png
 ```
 
 Tag an existing version:
 
 ```bash
-gsts tag favorite project1/assets/hero/base/default/v001
-gsts tag favorite /path/to/myGTSTroot/project1/assets/hero/base/default/v001/hero.png
+gtst tag favorite project1/assets/hero/base/default/v001
+gtst tag favorite /path/to/myGTSTroot/project1/assets/hero/base/default/v001/hero.png
 ```
 
 Get the latest version carrying a tag:
 
 ```bash
-gsts tagged favorite project1/assets/hero/base/default
+gtst tagged favorite project1/assets/hero/base/default
 ```
 
 List versions:
 
 ```bash
-gsts versions project1/assets/hero/base/default
+gtst versions project1/assets/hero/base/default
 ```
 
 List child facet values:
 
 ```bash
-gsts values
-gsts values project1
-gsts values project1/assets
-gsts values project1/assets/hero
+gtst values
+gtst values project1
+gtst values project1/assets
+gtst values project1/assets/hero
 ```
 
 Show information for an asset, version, or file:
 
 ```bash
-gsts info project1/assets/hero/base/default
-gsts info project1/assets/hero/base/default/v001
-gsts info /path/to/myGTSTroot/project1/assets/hero/base/default/v001/hero.png
-gsts info --json project1/assets/hero/base/default
+gtst info project1/assets/hero/base/default
+gtst info project1/assets/hero/base/default/v001
+gtst info /path/to/myGTSTroot/project1/assets/hero/base/default/v001/hero.png
+gtst info --json project1/assets/hero/base/default
 ```
 
-When `gsts info` receives an asset query without a version, it resolves the
+When `gtst info` receives an asset query without a version, it resolves the
 ready version first. If no ready version exists, it falls back to latest.
 
 ## Query Forms
 
-Asset queries are slash-form paths relative to `GSTS_ROOT`:
+Asset queries are slash-form paths relative to `GTST_ROOT`:
 
 ```text
 project/tree/asset/variant/subVariant
@@ -138,11 +139,11 @@ project/tree/asset/variant/subVariant/v1
 
 Queries are not absolute filesystem paths. Commands that accept filesystem
 paths, such as `info`, `ready`, and `tag`, require absolute paths inside
-`GSTS_ROOT`.
+`GTST_ROOT`.
 
 ## Filesystem Layout
 
-A GSTS root contains a required `gtst.json` config file and one or more
+A GTST root contains a required `gtst.json` config file and one or more
 projects:
 
 ```text
@@ -169,11 +170,11 @@ The default schema is:
 ["project", "tree", "asset", "variant", "subVariant"]
 ```
 
-The schema maps directly to folders beneath the GSTS root.
+The schema maps directly to folders beneath the GTST root.
 
 ## Ready Tag
 
-GSTS has a first-class ready tag. By default, the ready tag is named `ready` and
+GTST has a first-class ready tag. By default, the ready tag is named `ready` and
 is configured with:
 
 ```json
@@ -205,12 +206,12 @@ The version width controls folder names such as `v001`.
 
 ## Python API
 
-Open the active root from `GSTS_ROOT`:
+Open the active root from `GTST_ROOT`:
 
 ```python
-from gsts import GstsRoot
+from gtst import GtstRoot
 
-root = GstsRoot.from_env()
+root = GtstRoot.from_env()
 
 published = root.publish(
     source="/tmp/simpleBox.txt",
@@ -236,8 +237,8 @@ Create or open a specific root explicitly when setting up a root, writing tests,
 or intentionally bypassing the active root:
 
 ```python
-root = GstsRoot.create("/path/to/myGTSTroot")
-root = GstsRoot("/path/to/myGTSTroot")
+root = GtstRoot.create("/path/to/myGTSTroot")
+root = GtstRoot("/path/to/myGTSTroot")
 ```
 
 Facet values can also be passed as a dictionary:
@@ -305,12 +306,12 @@ v001/
 
 ## Design Notes
 
-- GSTS publishes one file per version.
+- GTST publishes one file per version.
 - Publish preserves the source filename.
 - Publish never overwrites existing version folders or files.
 - Malformed version folders are ignored.
 - Retrieval returns an error if the requested version folder has zero asset files
   or more than one direct asset file.
-- Tags are ignored if their format does not match GSTS rules.
+- Tags are ignored if their format does not match GTST rules.
 - Facet values and tag names must use only letters, numbers, underscore, dash,
   and dot.

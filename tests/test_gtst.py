@@ -5,16 +5,16 @@ from pathlib import Path
 
 import pytest
 
-from gsts import (
-    GstsConfigError,
-    GstsPathError,
-    GstsPublishError,
-    GstsRoot,
-    GstsRootError,
-    GstsTagError,
-    GstsVersionError,
+from gtst import (
+    GtstConfigError,
+    GtstPathError,
+    GtstPublishError,
+    GtstRoot,
+    GtstRootError,
+    GtstTagError,
+    GtstVersionError,
 )
-from gsts.cli import main as cli_main
+from gtst.cli import main as cli_main
 
 
 def write_source(tmp_path: Path, name: str = "simpleBox.txt", text: str = "box") -> Path:
@@ -34,7 +34,7 @@ def facets() -> dict[str, str]:
 
 
 def test_create_writes_default_config(tmp_path: Path) -> None:
-    root = GstsRoot.create(tmp_path / "root")
+    root = GtstRoot.create(tmp_path / "root")
 
     config_path = root.path / "gtst.json"
     assert config_path.is_file()
@@ -50,39 +50,39 @@ def test_open_requires_config(tmp_path: Path) -> None:
     empty_root = tmp_path / "root"
     empty_root.mkdir()
 
-    with pytest.raises(GstsConfigError, match="config does not exist"):
-        GstsRoot(empty_root)
+    with pytest.raises(GtstConfigError, match="config does not exist"):
+        GtstRoot(empty_root)
 
 
-def test_from_env_opens_gsts_root(
+def test_from_env_opens_gtst_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    created = GstsRoot.create(tmp_path / "root")
-    monkeypatch.setenv("GSTS_ROOT", str(created.path))
+    created = GtstRoot.create(tmp_path / "root")
+    monkeypatch.setenv("GTST_ROOT", str(created.path))
 
-    root = GstsRoot.from_env()
+    root = GtstRoot.from_env()
 
     assert root.path == created.path
 
 
 @pytest.mark.parametrize("value", [None, ""])
-def test_from_env_requires_gsts_root(
+def test_from_env_requires_gtst_root(
     value: str | None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     if value is None:
-        monkeypatch.delenv("GSTS_ROOT", raising=False)
+        monkeypatch.delenv("GTST_ROOT", raising=False)
     else:
-        monkeypatch.setenv("GSTS_ROOT", value)
+        monkeypatch.setenv("GTST_ROOT", value)
 
-    with pytest.raises(GstsRootError, match="GSTS_ROOT is not set"):
-        GstsRoot.from_env()
+    with pytest.raises(GtstRootError, match="GTST_ROOT is not set"):
+        GtstRoot.from_env()
 
 
 def test_root_constructor_requires_path(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("GSTS_ROOT", "/unused")
+    monkeypatch.setenv("GTST_ROOT", "/unused")
 
     with pytest.raises(TypeError):
-        GstsRoot()
+        GtstRoot()
 
 
 def test_old_config_without_ready_tag_name_loads_with_ready_default(tmp_path: Path) -> None:
@@ -99,14 +99,14 @@ def test_old_config_without_ready_tag_name_loads_with_ready_default(tmp_path: Pa
         encoding="utf-8",
     )
 
-    root = GstsRoot(root_path)
+    root = GtstRoot(root_path)
 
     assert root.config.ready_tag_name == "ready"
     assert root.config.is_single_version_tag("ready")
 
 
 def test_publish_allocates_versions_and_preserves_filename(tmp_path: Path) -> None:
-    root = GstsRoot.create(tmp_path / "root")
+    root = GtstRoot.create(tmp_path / "root")
     source = write_source(tmp_path, "simpleBox.txt", "v1")
 
     first = root.publish(source, facets=facets())
@@ -121,24 +121,24 @@ def test_publish_allocates_versions_and_preserves_filename(tmp_path: Path) -> No
 
 
 def test_publish_rejects_non_file_source(tmp_path: Path) -> None:
-    root = GstsRoot.create(tmp_path / "root")
+    root = GtstRoot.create(tmp_path / "root")
 
-    with pytest.raises(GstsPublishError, match="not a file"):
+    with pytest.raises(GtstPublishError, match="not a file"):
         root.publish(tmp_path, **facets())
 
 
 def test_invalid_facet_names_are_rejected(tmp_path: Path) -> None:
-    root = GstsRoot.create(tmp_path / "root")
+    root = GtstRoot.create(tmp_path / "root")
     source = write_source(tmp_path)
     bad_facets = facets()
     bad_facets["asset"] = "bad asset"
 
-    with pytest.raises(GstsPathError, match="letters, numbers"):
+    with pytest.raises(GtstPathError, match="letters, numbers"):
         root.publish(source, facets=bad_facets)
 
 
 def test_get_latest_and_explicit_versions_return_asset_file(tmp_path: Path) -> None:
-    root = GstsRoot.create(tmp_path / "root")
+    root = GtstRoot.create(tmp_path / "root")
     source = write_source(tmp_path, text="v1")
     first = root.publish(source, **facets())
     source.write_text("v2", encoding="utf-8")
@@ -151,7 +151,7 @@ def test_get_latest_and_explicit_versions_return_asset_file(tmp_path: Path) -> N
 
 
 def test_malformed_version_folders_are_ignored(tmp_path: Path) -> None:
-    root = GstsRoot.create(tmp_path / "root")
+    root = GtstRoot.create(tmp_path / "root")
     source = write_source(tmp_path)
     first = root.publish(source, **facets())
     asset_dir = Path(root.asset_dir(**facets()))
@@ -163,23 +163,23 @@ def test_malformed_version_folders_are_ignored(tmp_path: Path) -> None:
 
 
 def test_retrieval_errors_for_empty_or_ambiguous_version_folder(tmp_path: Path) -> None:
-    root = GstsRoot.create(tmp_path / "root")
+    root = GtstRoot.create(tmp_path / "root")
     asset_dir = root.asset_dir(**facets())
     (asset_dir / "v001").mkdir(parents=True)
 
-    with pytest.raises(GstsVersionError, match="no asset file"):
+    with pytest.raises(GtstVersionError, match="no asset file"):
         root.get_version(version=1, **facets())
 
     (asset_dir / "v001" / "one.txt").write_text("one", encoding="utf-8")
     (asset_dir / "v001" / "two.txt").write_text("two", encoding="utf-8")
     (asset_dir / "v001" / "nested").mkdir()
 
-    with pytest.raises(GstsVersionError, match="more than one asset file"):
+    with pytest.raises(GtstVersionError, match="more than one asset file"):
         root.get_version(version=1, **facets())
 
 
 def test_single_version_tag_uses_asset_level_history(tmp_path: Path) -> None:
-    root = GstsRoot.create(tmp_path / "root")
+    root = GtstRoot.create(tmp_path / "root")
     source = write_source(tmp_path, text="v1")
     first = root.publish(source, **facets())
     source.write_text("v2", encoding="utf-8")
@@ -196,7 +196,7 @@ def test_single_version_tag_uses_asset_level_history(tmp_path: Path) -> None:
 
 
 def test_ready_tag_is_single_version_without_single_version_tags_config(tmp_path: Path) -> None:
-    root = GstsRoot.create(tmp_path / "root")
+    root = GtstRoot.create(tmp_path / "root")
     source = write_source(tmp_path, text="v1")
     first = root.publish(source, **facets())
     source.write_text("v2", encoding="utf-8")
@@ -212,7 +212,7 @@ def test_ready_tag_is_single_version_without_single_version_tags_config(tmp_path
 
 
 def test_multi_version_tags_live_inside_versions(tmp_path: Path) -> None:
-    root = GstsRoot.create(tmp_path / "root")
+    root = GtstRoot.create(tmp_path / "root")
     source = write_source(tmp_path, text="v1")
     first = root.publish(source, **facets())
     source.write_text("v2", encoding="utf-8")
@@ -229,7 +229,7 @@ def test_multi_version_tags_live_inside_versions(tmp_path: Path) -> None:
 
 
 def test_get_current_prefers_ready_and_falls_back_to_latest(tmp_path: Path) -> None:
-    root = GstsRoot.create(tmp_path / "root")
+    root = GtstRoot.create(tmp_path / "root")
     source = write_source(tmp_path, text="v1")
     first = root.publish(source, **facets())
     source.write_text("v2", encoding="utf-8")
@@ -243,7 +243,7 @@ def test_get_current_prefers_ready_and_falls_back_to_latest(tmp_path: Path) -> N
 
 
 def test_single_version_tag_ignores_multi_version_tag_with_same_name(tmp_path: Path) -> None:
-    root = GstsRoot.create(tmp_path / "root")
+    root = GtstRoot.create(tmp_path / "root")
     source = write_source(tmp_path)
     root.publish(source, **facets())
     asset_dir = root.asset_dir(**facets())
@@ -252,12 +252,12 @@ def test_single_version_tag_ignores_multi_version_tag_with_same_name(tmp_path: P
     (ready_dir / "ready.gtst").touch()
 
     assert root.find_by_tag("ready", **facets()) == []
-    with pytest.raises(GstsTagError, match="not set"):
+    with pytest.raises(GtstTagError, match="not set"):
         root.get_tagged_version("ready", **facets())
 
 
 def test_custom_config_version_width_and_schema(tmp_path: Path) -> None:
-    root = GstsRoot.create(
+    root = GtstRoot.create(
         tmp_path / "root",
         schema=["project", "asset"],
         version_width=4,
@@ -272,18 +272,18 @@ def test_custom_config_version_width_and_schema(tmp_path: Path) -> None:
 
 
 def test_list_values_requires_prior_facets(tmp_path: Path) -> None:
-    root = GstsRoot.create(tmp_path / "root")
+    root = GtstRoot.create(tmp_path / "root")
     source = write_source(tmp_path)
     root.publish(source, **facets())
 
     assert root.list_values("project") == ["project1"]
     assert root.list_values("tree", project="project1") == ["assets"]
-    with pytest.raises(GstsPathError, match="prior facet"):
+    with pytest.raises(GtstPathError, match="prior facet"):
         root.list_values("asset")
 
 
 def test_path_helpers_resolve_facets_and_version(tmp_path: Path) -> None:
-    root = GstsRoot.create(tmp_path / "root")
+    root = GtstRoot.create(tmp_path / "root")
     source = write_source(tmp_path)
     published = root.publish(source, **facets())
 
@@ -306,26 +306,26 @@ def test_cli_init_prints_export_suggestion(
 
     output = capsys.readouterr().out
 
-    assert f"GSTS root: {root_path}" in output
-    assert f"export GSTS_ROOT={root_path}" in output
+    assert f"GTST root: {root_path}" in output
+    assert f"export GTST_ROOT={root_path}" in output
 
 
-def test_cli_requires_gsts_root(
+def test_cli_requires_gtst_root(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.delenv("GSTS_ROOT", raising=False)
+    monkeypatch.delenv("GTST_ROOT", raising=False)
 
     assert cli_main(["values"]) == 2
 
-    assert "GSTS_ROOT is not set" in capsys.readouterr().err
+    assert "GTST_ROOT is not set" in capsys.readouterr().err
 
 
 def test_cli_publish_ready_get_values_and_info_json(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    root = GstsRoot.create(tmp_path / "root")
+    root = GtstRoot.create(tmp_path / "root")
     source = write_source(tmp_path, "hero.txt", "hero")
-    monkeypatch.setenv("GSTS_ROOT", str(root.path))
+    monkeypatch.setenv("GTST_ROOT", str(root.path))
 
     assert (
         cli_main(
@@ -361,7 +361,7 @@ def test_cli_publish_ready_get_values_and_info_json(
 def test_cli_ready_and_tag_accept_version_query_and_absolute_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    root = GstsRoot.create(tmp_path / "root")
+    root = GtstRoot.create(tmp_path / "root")
     source = write_source(tmp_path, "hero.txt", "v1")
     first = root.publish(
         source,
@@ -380,7 +380,7 @@ def test_cli_ready_and_tag_accept_version_query_and_absolute_path(
         variant="base",
         subVariant="default",
     )
-    monkeypatch.setenv("GSTS_ROOT", str(root.path))
+    monkeypatch.setenv("GTST_ROOT", str(root.path))
 
     assert cli_main(["ready", "project1/assets/hero/base/default/v1"]) == 0
     assert capsys.readouterr().out.strip() == first

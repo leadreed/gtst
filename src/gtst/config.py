@@ -1,4 +1,4 @@
-"""GSTS root configuration."""
+"""GTST root configuration."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .errors import GstsConfigError
+from .errors import GtstConfigError
 from .validation import validate_name
 
 CONFIG_FILENAME = "gtst.json"
@@ -18,8 +18,8 @@ DEFAULT_SINGLE_VERSION_TAGS: list[str] = []
 
 
 @dataclass(frozen=True)
-class GstsConfig:
-    """Configuration stored in a GSTS root."""
+class GtstConfig:
+    """Configuration stored in a GTST root."""
 
     schema: list[str] = field(default_factory=lambda: list(DEFAULT_SCHEMA))
     version_width: int = DEFAULT_VERSION_WIDTH
@@ -29,11 +29,11 @@ class GstsConfig:
     )
 
     @classmethod
-    def default(cls) -> "GstsConfig":
+    def default(cls) -> "GtstConfig":
         return cls()
 
     @classmethod
-    def from_mapping(cls, data: dict[str, Any]) -> "GstsConfig":
+    def from_mapping(cls, data: dict[str, Any]) -> "GtstConfig":
         schema = data.get("schema", DEFAULT_SCHEMA)
         version_width = data.get("version_width", DEFAULT_VERSION_WIDTH)
         ready_tag_name = data.get("ready_tag_name", DEFAULT_READY_TAG_NAME)
@@ -44,27 +44,27 @@ class GstsConfig:
         if not isinstance(schema, list) or not all(
             isinstance(item, str) for item in schema
         ):
-            raise GstsConfigError("Config field 'schema' must be a list of strings.")
+            raise GtstConfigError("Config field 'schema' must be a list of strings.")
         if not schema:
-            raise GstsConfigError("Config field 'schema' cannot be empty.")
+            raise GtstConfigError("Config field 'schema' cannot be empty.")
         if len(set(schema)) != len(schema):
-            raise GstsConfigError("Config field 'schema' cannot contain duplicates.")
+            raise GtstConfigError("Config field 'schema' cannot contain duplicates.")
         for name in schema:
             validate_name(name, label="schema field")
 
         if not isinstance(version_width, int) or isinstance(version_width, bool):
-            raise GstsConfigError("Config field 'version_width' must be an integer.")
+            raise GtstConfigError("Config field 'version_width' must be an integer.")
         if version_width < 1:
-            raise GstsConfigError("Config field 'version_width' must be at least 1.")
+            raise GtstConfigError("Config field 'version_width' must be at least 1.")
 
         if not isinstance(ready_tag_name, str):
-            raise GstsConfigError("Config field 'ready_tag_name' must be a string.")
+            raise GtstConfigError("Config field 'ready_tag_name' must be a string.")
         validate_name(ready_tag_name, label="ready tag")
 
         if not isinstance(single_version_tags, list) or not all(
             isinstance(item, str) for item in single_version_tags
         ):
-            raise GstsConfigError(
+            raise GtstConfigError(
                 "Config field 'single_version_tags' must be a list of strings."
             )
         for tag in single_version_tags:
@@ -78,20 +78,20 @@ class GstsConfig:
         )
 
     @classmethod
-    def load(cls, root_path: Path) -> "GstsConfig":
+    def load(cls, root_path: Path) -> "GtstConfig":
         config_path = root_path / CONFIG_FILENAME
         if not config_path.exists():
-            raise GstsConfigError(f"GSTS config does not exist: {config_path}")
+            raise GtstConfigError(f"GTST config does not exist: {config_path}")
         if not config_path.is_file():
-            raise GstsConfigError(f"GSTS config is not a file: {config_path}")
+            raise GtstConfigError(f"GTST config is not a file: {config_path}")
 
         try:
             data = json.loads(config_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError as exc:
-            raise GstsConfigError(f"GSTS config is invalid JSON: {config_path}") from exc
+            raise GtstConfigError(f"GTST config is invalid JSON: {config_path}") from exc
 
         if not isinstance(data, dict):
-            raise GstsConfigError("GSTS config must contain a JSON object.")
+            raise GtstConfigError("GTST config must contain a JSON object.")
         return cls.from_mapping(data)
 
     def write(self, root_path: Path) -> Path:

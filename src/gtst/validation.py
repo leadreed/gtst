@@ -1,24 +1,24 @@
-"""Validation helpers for filesystem-safe GSTS names."""
+"""Validation helpers for filesystem-safe GTST names."""
 
 from __future__ import annotations
 
 import re
 
-from .errors import GstsPathError
+from .errors import GtstPathError
 
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
 def validate_name(value: str, *, label: str) -> None:
     if not isinstance(value, str):
-        raise GstsPathError(f"{label} must be a string.")
+        raise GtstPathError(f"{label} must be a string.")
     if not value:
-        raise GstsPathError(f"{label} cannot be empty.")
+        raise GtstPathError(f"{label} cannot be empty.")
     if value in {".", ".."}:
-        raise GstsPathError(f"{label} cannot be '.' or '..'.")
+        raise GtstPathError(f"{label} cannot be '.' or '..'.")
     if "/" in value or "\\" in value:
-        raise GstsPathError(f"{label} cannot contain path separators.")
+        raise GtstPathError(f"{label} cannot contain path separators.")
     if not NAME_PATTERN.match(value):
-        raise GstsPathError(
+        raise GtstPathError(
             f"{label} can only contain letters, numbers, underscore, dash, and dot."
         )

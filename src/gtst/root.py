@@ -1,4 +1,4 @@
-"""Public GSTS root API."""
+"""Public GTST root API."""
 
 from __future__ import annotations
 
@@ -8,14 +8,14 @@ import re
 import shutil
 from typing import Any
 
-from .config import CONFIG_FILENAME, GstsConfig
+from .config import CONFIG_FILENAME, GtstConfig
 from .errors import (
-    GstsConfigError,
-    GstsPathError,
-    GstsPublishError,
-    GstsRootError,
-    GstsTagError,
-    GstsVersionError,
+    GtstConfigError,
+    GtstPathError,
+    GtstPublishError,
+    GtstRootError,
+    GtstTagError,
+    GtstVersionError,
 )
 from .locking import FileLock
 from .validation import validate_name
@@ -23,19 +23,19 @@ from .validation import validate_name
 GTST_TAGS_DIR = "gtst_tags"
 
 
-class GstsRoot:
-    """A filesystem root containing GSTS projects and assets."""
+class GtstRoot:
+    """A filesystem root containing GTST projects and assets."""
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path).expanduser().resolve()
-        self.config = GstsConfig.load(self.path)
+        self.config = GtstConfig.load(self.path)
 
     @classmethod
-    def from_env(cls) -> "GstsRoot":
-        root_path = os.environ.get("GSTS_ROOT")
+    def from_env(cls) -> "GtstRoot":
+        root_path = os.environ.get("GTST_ROOT")
         if not root_path:
-            raise GstsRootError(
-                "GSTS_ROOT is not set. Run 'gsts init ROOT' and export GSTS_ROOT."
+            raise GtstRootError(
+                "GTST_ROOT is not set. Run 'gtst init ROOT' and export GTST_ROOT."
             )
         return cls(root_path)
 
@@ -48,24 +48,24 @@ class GstsRoot:
         version_width: int = 3,
         single_version_tags: list[str] | None = None,
         exist_ok: bool = True,
-    ) -> "GstsRoot":
+    ) -> "GtstRoot":
         root_path = Path(path).expanduser().resolve()
         if root_path.exists() and not root_path.is_dir():
-            raise GstsConfigError(f"GSTS root is not a directory: {root_path}")
+            raise GtstConfigError(f"GTST root is not a directory: {root_path}")
         root_path.mkdir(parents=True, exist_ok=exist_ok)
 
         config_path = root_path / CONFIG_FILENAME
         if config_path.exists() and not exist_ok:
-            raise GstsConfigError(f"GSTS config already exists: {config_path}")
+            raise GtstConfigError(f"GTST config already exists: {config_path}")
 
         if not config_path.exists():
-            config = GstsConfig.from_mapping(
+            config = GtstConfig.from_mapping(
                 {
-                    "schema": schema if schema is not None else GstsConfig.default().schema,
+                    "schema": schema if schema is not None else GtstConfig.default().schema,
                     "version_width": version_width,
                     "single_version_tags": single_version_tags
                     if single_version_tags is not None
-                    else GstsConfig.default().single_version_tags,
+                    else GtstConfig.default().single_version_tags,
                 }
             )
             config.write(root_path)
@@ -80,9 +80,9 @@ class GstsRoot:
     ) -> str:
         source_path = Path(source).expanduser().resolve()
         if not source_path.exists():
-            raise GstsPublishError(f"Source file does not exist: {source_path}")
+            raise GtstPublishError(f"Source file does not exist: {source_path}")
         if not source_path.is_file():
-            raise GstsPublishError(f"Source path is not a file: {source_path}")
+            raise GtstPublishError(f"Source path is not a file: {source_path}")
 
         with self._lock():
             asset_dir = self.asset_dir(facets=facets, **facet_values)
@@ -90,11 +90,11 @@ class GstsRoot:
             next_number = self._latest_version_number(asset_dir) + 1
             version_dir = asset_dir / self._format_version(next_number)
             if version_dir.exists():
-                raise GstsPublishError(f"Version folder already exists: {version_dir}")
+                raise GtstPublishError(f"Version folder already exists: {version_dir}")
             version_dir.mkdir()
             destination = version_dir / source_path.name
             if destination.exists():
-                raise GstsPublishError(f"Destination file already exists: {destination}")
+                raise GtstPublishError(f"Destination file already exists: {destination}")
             shutil.copy2(source_path, destination)
             return str(destination.resolve())
 
@@ -110,7 +110,7 @@ class GstsRoot:
             return self.get_tagged_version(
                 self.config.ready_tag_name, facets=facets, **facet_values
             )
-        except GstsTagError:
+        except GtstTagError:
             return self.get_latest(facets=facets, **facet_values)
 
     def get_version(
@@ -161,16 +161,16 @@ class GstsRoot:
         if self.config.is_single_version_tag(tag):
             version_number = self._current_single_version_tag(asset_dir, tag)
             if version_number is None:
-                raise GstsTagError(f"Tag '{tag}' is not set for asset: {asset_dir}")
+                raise GtstTagError(f"Tag '{tag}' is not set for asset: {asset_dir}")
             return self.get_version(
                 version=version_number, facets=facets, **facet_values
             )
 
         tagged = self.find_by_tag(tag, facets=facets, **facet_values)
         if not tagged:
-            raise GstsTagError(f"Tag '{tag}' is not set for asset: {asset_dir}")
+            raise GtstTagError(f"Tag '{tag}' is not set for asset: {asset_dir}")
         if len(tagged) > 1:
-            raise GstsTagError(f"Tag '{tag}' is set on multiple versions.")
+            raise GtstTagError(f"Tag '{tag}' is set on multiple versions.")
         return tagged[0]
 
     def get_latest_by_tag(
@@ -185,7 +185,7 @@ class GstsRoot:
         if self.config.is_single_version_tag(tag):
             version_number = self._current_single_version_tag(asset_dir, tag)
             if version_number is None:
-                raise GstsTagError(f"Tag '{tag}' is not set for asset: {asset_dir}")
+                raise GtstTagError(f"Tag '{tag}' is not set for asset: {asset_dir}")
             return self.get_version(version=version_number, facets=facets, **facet_values)
 
         latest_version: str | None = None
@@ -194,7 +194,7 @@ class GstsRoot:
             if (version_dir / GTST_TAGS_DIR / f"{tag}.gtst").is_file():
                 latest_version = version_name
         if latest_version is None:
-            raise GstsTagError(f"Tag '{tag}' is not set for asset: {asset_dir}")
+            raise GtstTagError(f"Tag '{tag}' is not set for asset: {asset_dir}")
         return self.get_version(version=latest_version, facets=facets, **facet_values)
 
     def find_by_tag(
@@ -252,12 +252,12 @@ class GstsRoot:
         **facet_values: str,
     ) -> list[str]:
         if field not in self.config.schema:
-            raise GstsPathError(f"Unknown schema field: {field}")
+            raise GtstPathError(f"Unknown schema field: {field}")
         merged = self._merge_facets(facets, facet_values, require_complete=False)
         field_index = self.config.schema.index(field)
         for prior_field in self.config.schema[:field_index]:
             if prior_field not in merged:
-                raise GstsPathError(
+                raise GtstPathError(
                     f"Cannot list '{field}' without prior facet '{prior_field}'."
                 )
         base = self.path.joinpath(
@@ -279,13 +279,13 @@ class GstsRoot:
         if version == "latest":
             latest_number = self._latest_version_number(asset_path)
             if latest_number < 1:
-                raise GstsVersionError(f"No versions exist for asset: {asset_path}")
+                raise GtstVersionError(f"No versions exist for asset: {asset_path}")
             version_name = self._format_version(latest_number)
         else:
             version_name = self._normalize_version(version)
         version_path = asset_path / version_name
         if not version_path.is_dir():
-            raise GstsVersionError(f"Version folder does not exist: {version_path}")
+            raise GtstVersionError(f"Version folder does not exist: {version_path}")
         return version_path
 
     def asset_dir_from_path(self, path: str | Path) -> str:
@@ -302,7 +302,7 @@ class GstsRoot:
             if current == self.path:
                 break
             current = current.parent
-        raise GstsPathError(f"Path is not inside a GSTS version folder: {resolved}")
+        raise GtstPathError(f"Path is not inside a GTST version folder: {resolved}")
 
     def version_from_path(self, path: str | Path) -> str:
         return Path(self.version_dir_from_path(path)).name
@@ -312,10 +312,10 @@ class GstsRoot:
         try:
             relative = asset_dir.relative_to(self.path)
         except ValueError as exc:
-            raise GstsPathError(f"Path is not inside GSTS root: {path}") from exc
+            raise GtstPathError(f"Path is not inside GTST root: {path}") from exc
         parts = relative.parts
         if len(parts) != len(self.config.schema):
-            raise GstsPathError(f"Path does not match GSTS schema: {asset_dir}")
+            raise GtstPathError(f"Path does not match GTST schema: {asset_dir}")
         return dict(zip(self.config.schema, parts))
 
     def _merge_facets(
@@ -328,21 +328,21 @@ class GstsRoot:
         merged: dict[str, str] = {}
         if facets is not None:
             if not isinstance(facets, dict):
-                raise GstsPathError("facets must be a dictionary.")
+                raise GtstPathError("facets must be a dictionary.")
             merged.update(facets)
         for key, value in facet_values.items():
             if key in merged and merged[key] != value:
-                raise GstsPathError(f"Facet '{key}' was provided more than once.")
+                raise GtstPathError(f"Facet '{key}' was provided more than once.")
             merged[key] = value
 
         unknown = sorted(set(merged) - set(self.config.schema))
         if unknown:
-            raise GstsPathError(f"Unknown schema fields: {', '.join(unknown)}")
+            raise GtstPathError(f"Unknown schema fields: {', '.join(unknown)}")
 
         if require_complete:
             missing = [field for field in self.config.schema if field not in merged]
             if missing:
-                raise GstsPathError(f"Missing schema fields: {', '.join(missing)}")
+                raise GtstPathError(f"Missing schema fields: {', '.join(missing)}")
 
         for field, value in merged.items():
             validate_name(value, label=f"facet '{field}'")
@@ -372,23 +372,23 @@ class GstsRoot:
 
     def _normalize_version(self, version: str | int) -> str:
         if isinstance(version, bool):
-            raise GstsVersionError("Version cannot be a boolean.")
+            raise GtstVersionError("Version cannot be a boolean.")
         if isinstance(version, int):
             if version < 1:
-                raise GstsVersionError("Version number must be at least 1.")
+                raise GtstVersionError("Version number must be at least 1.")
             return self._format_version(version)
         if not isinstance(version, str):
-            raise GstsVersionError("Version must be an integer, 'latest', or v-prefixed string.")
+            raise GtstVersionError("Version must be an integer, 'latest', or v-prefixed string.")
         if version.isdigit():
             return self._format_version(int(version))
         if re.fullmatch(r"v\d+", version):
             number = int(version[1:])
             if number < 1:
-                raise GstsVersionError("Version number must be at least 1.")
+                raise GtstVersionError("Version number must be at least 1.")
             return self._format_version(number)
         number = self._version_number_from_name(version)
         if number is None:
-            raise GstsVersionError(f"Invalid version: {version}")
+            raise GtstVersionError(f"Invalid version: {version}")
         return self._format_version(number)
 
     def _version_number_from_name(self, name: str) -> int | None:
@@ -401,7 +401,7 @@ class GstsRoot:
     def _version_number_from_dir(self, version_dir: Path) -> int:
         number = self._version_number_from_name(version_dir.name)
         if number is None:
-            raise GstsVersionError(f"Invalid version folder: {version_dir}")
+            raise GtstVersionError(f"Invalid version folder: {version_dir}")
         return number
 
     def _asset_file_in_version(self, version_dir: Path) -> Path:
@@ -411,9 +411,9 @@ class GstsRoot:
             if path.is_file() and path.name != "gtst.lock" and not path.name.endswith(".gtst")
         ]
         if not files:
-            raise GstsVersionError(f"Version folder contains no asset file: {version_dir}")
+            raise GtstVersionError(f"Version folder contains no asset file: {version_dir}")
         if len(files) > 1:
-            raise GstsVersionError(
+            raise GtstVersionError(
                 f"Version folder contains more than one asset file: {version_dir}"
             )
         return files[0]
@@ -434,7 +434,7 @@ class GstsRoot:
             f"{tag}_{version_number:0{self.config.version_width}d}.gtst"
         )
         if tag_path.exists():
-            raise GstsTagError(f"Tag operation file already exists: {tag_path}")
+            raise GtstTagError(f"Tag operation file already exists: {tag_path}")
         tag_path.touch()
         return tag_path
 
