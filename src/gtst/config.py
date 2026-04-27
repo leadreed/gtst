@@ -14,7 +14,15 @@ CONFIG_FILENAME = "gtst.json"
 DEFAULT_SCHEMA = ["project", "tree", "asset", "variant", "subVariant"]
 DEFAULT_VERSION_WIDTH = 3
 DEFAULT_READY_TAG_NAME = "ready"
+DEFAULT_FILENAME_FACET = "asset"
 DEFAULT_SINGLE_VERSION_TAGS: list[str] = []
+REQUIRED_FIELDS = {
+    "schema",
+    "version_width",
+    "ready_tag_name",
+    "default_filename_facet",
+    "single_version_tags",
+}
 
 
 @dataclass(frozen=True)
@@ -24,6 +32,7 @@ class GtstConfig:
     schema: list[str] = field(default_factory=lambda: list(DEFAULT_SCHEMA))
     version_width: int = DEFAULT_VERSION_WIDTH
     ready_tag_name: str = DEFAULT_READY_TAG_NAME
+    default_filename_facet: str = DEFAULT_FILENAME_FACET
     single_version_tags: list[str] = field(
         default_factory=lambda: list(DEFAULT_SINGLE_VERSION_TAGS)
     )
@@ -34,12 +43,17 @@ class GtstConfig:
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any]) -> "GtstConfig":
-        schema = data.get("schema", DEFAULT_SCHEMA)
-        version_width = data.get("version_width", DEFAULT_VERSION_WIDTH)
-        ready_tag_name = data.get("ready_tag_name", DEFAULT_READY_TAG_NAME)
-        single_version_tags = data.get(
-            "single_version_tags", DEFAULT_SINGLE_VERSION_TAGS
-        )
+        missing = sorted(REQUIRED_FIELDS - set(data))
+        if missing:
+            raise GtstConfigError(
+                f"GTST config missing required fields: {', '.join(missing)}"
+            )
+
+        schema = data["schema"]
+        version_width = data["version_width"]
+        ready_tag_name = data["ready_tag_name"]
+        default_filename_facet = data["default_filename_facet"]
+        single_version_tags = data["single_version_tags"]
 
         if not isinstance(schema, list) or not all(
             isinstance(item, str) for item in schema
@@ -61,6 +75,16 @@ class GtstConfig:
             raise GtstConfigError("Config field 'ready_tag_name' must be a string.")
         validate_name(ready_tag_name, label="ready tag")
 
+        if not isinstance(default_filename_facet, str):
+            raise GtstConfigError(
+                "Config field 'default_filename_facet' must be a string."
+            )
+        validate_name(default_filename_facet, label="default filename facet")
+        if default_filename_facet not in schema:
+            raise GtstConfigError(
+                "Config field 'default_filename_facet' must name a schema field."
+            )
+
         if not isinstance(single_version_tags, list) or not all(
             isinstance(item, str) for item in single_version_tags
         ):
@@ -74,6 +98,7 @@ class GtstConfig:
             schema=list(schema),
             version_width=version_width,
             ready_tag_name=ready_tag_name,
+            default_filename_facet=default_filename_facet,
             single_version_tags=list(dict.fromkeys(single_version_tags)),
         )
 
@@ -107,6 +132,7 @@ class GtstConfig:
             "schema": list(self.schema),
             "version_width": self.version_width,
             "ready_tag_name": self.ready_tag_name,
+            "default_filename_facet": self.default_filename_facet,
             "single_version_tags": list(self.single_version_tags),
         }
 

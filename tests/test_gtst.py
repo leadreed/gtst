@@ -42,6 +42,7 @@ def test_create_writes_default_config(tmp_path: Path) -> None:
         "schema": ["project", "tree", "asset", "variant", "subVariant"],
         "version_width": 3,
         "ready_tag_name": "ready",
+        "default_filename_facet": "asset",
         "single_version_tags": [],
     }
 
@@ -110,24 +111,51 @@ def test_root_constructor_requires_path(monkeypatch: pytest.MonkeyPatch) -> None
         GtstRoot()
 
 
-def test_old_config_without_ready_tag_name_loads_with_ready_default(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "missing_field",
+    [
+        "schema",
+        "version_width",
+        "ready_tag_name",
+        "default_filename_facet",
+        "single_version_tags",
+    ],
+)
+def test_config_requires_explicit_fields(tmp_path: Path, missing_field: str) -> None:
+    root_path = tmp_path / "root"
+    root_path.mkdir()
+    config = {
+        "schema": ["project", "tree", "asset", "variant", "subVariant"],
+        "version_width": 3,
+        "ready_tag_name": "ready",
+        "default_filename_facet": "asset",
+        "single_version_tags": [],
+    }
+    del config[missing_field]
+    (root_path / "gtst.json").write_text(json.dumps(config), encoding="utf-8")
+
+    with pytest.raises(GtstConfigError, match="missing required fields"):
+        GtstRoot(root_path)
+
+
+def test_config_default_filename_facet_must_be_in_schema(tmp_path: Path) -> None:
     root_path = tmp_path / "root"
     root_path.mkdir()
     (root_path / "gtst.json").write_text(
         json.dumps(
             {
-                "schema": ["project", "tree", "asset", "variant", "subVariant"],
+                "schema": ["project", "asset"],
                 "version_width": 3,
-                "single_version_tags": ["ready"],
+                "ready_tag_name": "ready",
+                "default_filename_facet": "name",
+                "single_version_tags": [],
             }
         ),
         encoding="utf-8",
     )
 
-    root = GtstRoot(root_path)
-
-    assert root.config.ready_tag_name == "ready"
-    assert root.config.is_single_version_tag("ready")
+    with pytest.raises(GtstConfigError, match="default_filename_facet"):
+        GtstRoot(root_path)
 
 
 def test_publish_allocates_versions_and_preserves_filename(tmp_path: Path) -> None:
@@ -286,6 +314,7 @@ def test_custom_config_version_width_and_schema(tmp_path: Path) -> None:
         tmp_path / "root",
         schema=["project", "asset"],
         version_width=4,
+        default_filename_facet="asset",
         single_version_tags=["approved"],
     )
     source = write_source(tmp_path)

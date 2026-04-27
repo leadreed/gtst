@@ -46,6 +46,7 @@ class GtstRoot:
         *,
         schema: list[str] | None = None,
         version_width: int = 3,
+        default_filename_facet: str = "asset",
         single_version_tags: list[str] | None = None,
         exist_ok: bool = True,
     ) -> "GtstRoot":
@@ -63,6 +64,8 @@ class GtstRoot:
                 {
                     "schema": schema if schema is not None else GtstConfig.default().schema,
                     "version_width": version_width,
+                    "ready_tag_name": GtstConfig.default().ready_tag_name,
+                    "default_filename_facet": default_filename_facet,
                     "single_version_tags": single_version_tags
                     if single_version_tags is not None
                     else GtstConfig.default().single_version_tags,
