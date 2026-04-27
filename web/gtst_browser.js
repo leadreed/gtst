@@ -416,6 +416,15 @@ async function refreshBrowser(node) {
   }
 }
 
+function scheduleRefreshBrowser(node) {
+  const state = ensureOverlay(node);
+  window.clearTimeout(state.refreshTimer);
+  state.refreshTimer = window.setTimeout(() => {
+    wrapBrowserWidgets(node);
+    refreshBrowser(node);
+  }, 0);
+}
+
 function positionOverlay(node) {
   const state = ensureOverlay(node);
   if (!node.graph || node.flags?.collapsed) {
@@ -432,6 +441,8 @@ function positionOverlay(node) {
   state.element.style.top = `${y}px`;
   state.element.style.width = `${width}px`;
   state.element.style.height = `${height}px`;
+  state.element.style.transform = `scale(${scale})`;
+  state.element.style.transformOrigin = "top left";
 }
 
 function startOverlayLoop() {
@@ -506,7 +517,16 @@ app.registerExtension({
       browserNodes.add(this);
       ensureOverlay(this);
       wrapBrowserWidgets(this);
-      refreshBrowser(this);
+      scheduleRefreshBrowser(this);
+    };
+
+    const originalOnConfigure = nodeType.prototype.onConfigure;
+    nodeType.prototype.onConfigure = function () {
+      const result = originalOnConfigure?.apply(this, arguments);
+      browserNodes.add(this);
+      ensureOverlay(this);
+      scheduleRefreshBrowser(this);
+      return result;
     };
 
     const originalOnRemoved = nodeType.prototype.onRemoved;
