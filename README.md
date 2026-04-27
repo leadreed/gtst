@@ -305,7 +305,9 @@ Available nodes:
   This is an output node.
 - `Tag GTST Version`: add a custom tag to a specific version. This is an output
   node.
-- `Browse GTST`: list facet values or asset versions as JSON.
+- `Browse GTST`: visually browse GTST versions in a scrollable preview grid,
+  select a concrete version, and output a `GTST_ASSET_REF`, file path, and
+  metadata JSON.
 
 All nodes use `GTST_ROOT`; there are no root path inputs in the ComfyUI nodes.
 Set `GTST_ROOT` in the environment that starts ComfyUI. Missing or
@@ -317,6 +319,22 @@ autocomplete fields populated only from existing values under `GTST_ROOT`.
 Focus a field to show valid suggestions for the facets already set before it,
 then type to filter them or enter a new value. `variant` defaults to `base`, and
 `subVariant` defaults to `default`.
+
+`Browse GTST` uses the same autocomplete behavior, but `variant` and
+`subVariant` default to empty so they can act as broad filters. Empty browser
+facet fields match any existing value. Its result mode controls which concrete
+versions appear in the preview grid:
+
+- `latest only`: show one version per matching asset, preferring `ready` and
+  falling back to latest/current.
+- `all versions`: show every matching version file.
+- `tagged`: show versions matching the `tag` input.
+
+Clicking a preview selects that exact version for the node output. If the
+filters change and the selected file is no longer visible, the selection is
+cleared. Text previews are truncated before display and clipped inside the
+tile. Video previews autoplay muted and unmute while hovered. The preview size
+slider controls grid tile size from 80 to 240 pixels.
 
 Image load/save nodes use the Pillow, NumPy, and Torch libraries already present
 in a normal ComfyUI Python environment.
