@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
 import re
 import sys
@@ -185,10 +184,7 @@ def _cmd_info(args: argparse.Namespace) -> None:
 
 
 def _load_root_from_env() -> GstsRoot:
-    root_path = os.environ.get("GSTS_ROOT")
-    if not root_path:
-        raise CliError("GSTS_ROOT is not set. Run 'gsts init ROOT' and export GSTS_ROOT.")
-    return GstsRoot(root_path)
+    return GstsRoot.from_env()
 
 
 def _parse_query_parts(query: str) -> list[str]:
