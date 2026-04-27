@@ -22,6 +22,7 @@ from comfy_nodes import (
     facet_suggestions_payload,
     selected_browser_asset,
 )
+from gtst import GtstRoot
 
 
 def test_comfy_entrypoint_exports_node_mappings() -> None:
@@ -64,13 +65,13 @@ def make_ref(
 ) -> dict[str, Any]:
     monkeypatch.setenv("GTST_ROOT", str(tmp_path / "root"))
     asset_ref = GtstAssetRef().resolve(
-        "project1",
-        tree,
-        asset,
-        "base",
-        "default",
-        "",
-        "",
+        project="project1",
+        tree=tree,
+        asset=asset,
+        variant="base",
+        subVariant="default",
+        version="",
+        tag="",
     )["result"][0]
     return asset_ref
 
@@ -81,13 +82,13 @@ def test_asset_ref_resolve_has_no_preview_ui(
     monkeypatch.setenv("GTST_ROOT", str(tmp_path / "root"))
 
     result = GtstAssetRef().resolve(
-        "project1",
-        "images",
-        "heroImage",
-        "base",
-        "default",
-        "",
-        "",
+        project="project1",
+        tree="images",
+        asset="heroImage",
+        variant="base",
+        subVariant="default",
+        version="",
+        tag="",
     )
 
     assert "ui" not in result
@@ -102,13 +103,13 @@ def test_asset_ref_missing_explicit_version_errors(
 
     with pytest.raises(Exception, match="Version folder does not exist"):
         GtstAssetRef().resolve(
-            "project1",
-            "prompts",
-            "heroPrompt",
-            "base",
-            "default",
-            "v999",
-            "",
+            project="project1",
+            tree="prompts",
+            asset="heroPrompt",
+            variant="base",
+            subVariant="default",
+            version="v999",
+            tag="",
         )
 
 
@@ -161,37 +162,37 @@ def test_text_nodes_asset_ref_tag_and_ready(
     assert json.loads(second_metadata)["tags"] == ["approved", "favorite", "ready"]
 
     current_ref, ref_path, ref_metadata = GtstAssetRef().resolve(
-        "project1",
-        "prompts",
-        "heroPrompt",
-        "base",
-        "default",
-        "",
-        "",
+        project="project1",
+        tree="prompts",
+        asset="heroPrompt",
+        variant="base",
+        subVariant="default",
+        version="",
+        tag="",
     )["result"]
     assert ref_path == second
     assert current_ref["file_path"] == second
     assert json.loads(ref_metadata)["version"] == "v002"
 
     _, tagged_path, _ = GtstAssetRef().resolve(
-        "project1",
-        "prompts",
-        "heroPrompt",
-        "base",
-        "default",
-        "",
-        "draft",
+        project="project1",
+        tree="prompts",
+        asset="heroPrompt",
+        variant="base",
+        subVariant="default",
+        version="",
+        tag="draft",
     )["result"]
     assert tagged_path == first
 
     version_ref, _, _ = GtstAssetRef().resolve(
-        "project1",
-        "prompts",
-        "heroPrompt",
-        "base",
-        "default",
-        "v001",
-        "",
+        project="project1",
+        tree="prompts",
+        asset="heroPrompt",
+        variant="base",
+        subVariant="default",
+        version="v001",
+        tag="",
     )["result"]
     text, loaded_path, _ = LoadGtstText().load(version_ref)
     assert text == "first prompt"
@@ -222,6 +223,7 @@ def test_video_nodes_publish_and_load_path(tmp_path: Path, monkeypatch: Any) -> 
     result = SaveGtstVideo().save(
         str(source),
         asset_ref,
+        "",
         True,
         "review",
     )
@@ -332,16 +334,16 @@ def test_browser_selection_reconstructs_asset_ref(
     saved = SaveGtstText().save("caption", asset_ref, "", False, "")["result"][1]
 
     result = BrowseGtst().browse(
-        "latest only",
-        "project1",
-        "texts",
-        "caption01",
-        "",
-        "",
-        "",
-        "",
-        saved,
-        140,
+        mode="latest only",
+        project="project1",
+        tree="texts",
+        asset="caption01",
+        variant="",
+        subVariant="",
+        version="",
+        tag="",
+        selected_file_path=saved,
+        preview_item_size=140,
     )
 
     selected_ref, selected_path, selected_metadata = result["result"]
@@ -391,14 +393,14 @@ def test_facet_suggestions_return_empty_for_missing_prior_facets(
     assert facet_suggestions_payload("asset", {"project": "project1"})["values"] == []
 
 
-def test_facet_suggestions_map_subvariant_field(
+def test_facet_suggestions_use_exact_schema_field_names(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
     asset_ref = make_ref(tmp_path, monkeypatch, tree="images", asset="hero")
     SaveGtstText().save("placeholder", asset_ref, "", False, "")
 
     payload = facet_suggestions_payload(
-        "subvariant",
+        "subVariant",
         {
             "project": "project1",
             "tree": "images",
@@ -430,7 +432,7 @@ def test_asset_ref_suggestions_include_versions_and_tags(
         "tree": "images",
         "asset": "hero",
         "variant": "base",
-        "subvariant": "default",
+        "subVariant": "default",
     }
 
     assert facet_suggestions_payload("version", values)["values"] == ["v001", "v002"]
@@ -463,10 +465,67 @@ def test_asset_ref_inputs_are_strings_with_existing_facet_values_only(
     assert inputs["tree"][0] == "STRING"
     assert inputs["asset"][0] == "STRING"
     assert inputs["variant"][0] == "STRING"
-    assert inputs["subvariant"][0] == "STRING"
-    assert inputs["variant"][1]["default"] == "base"
-    assert inputs["subvariant"][1]["default"] == "default"
+    assert inputs["subVariant"][0] == "STRING"
+    assert inputs["variant"][1]["default"] == ""
+    assert inputs["subVariant"][1]["default"] == ""
     assert inputs["tree"][1]["gtstFacetValues"] == ["newTree"]
     assert inputs["asset"][1]["gtstFacetValues"] == ["newAsset"]
     assert "assets" not in inputs["tree"][1]["gtstFacetValues"]
     assert "images" not in inputs["tree"][1]["gtstFacetValues"]
+
+
+def test_nodes_use_custom_schema_exact_field_names(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    root = GtstRoot.create(
+        tmp_path / "root",
+        schema=["show", "shot", "name"],
+        default_filename_facet="name",
+    )
+    monkeypatch.setenv("GTST_ROOT", str(root.path))
+
+    inputs = GtstAssetRef.INPUT_TYPES()["required"]
+    assert {"show", "shot", "name", "version", "tag"} <= set(inputs)
+    assert "project" not in inputs
+    assert "subvariant" not in inputs
+    assert "subVariant" not in inputs
+
+    asset_ref = GtstAssetRef().resolve(
+        show="demo",
+        shot="shot010",
+        name="plateMain",
+        version="",
+        tag="",
+    )["result"][0]
+    result = SaveGtstText().save("plate notes", asset_ref, "", False, "")
+    published = result["result"][1]
+
+    assert published.endswith("/demo/shot010/plateMain/v001/plateMain.txt")
+    assert json.loads(result["result"][2])["facets"] == {
+        "show": "demo",
+        "shot": "shot010",
+        "name": "plateMain",
+    }
+
+
+def test_default_filename_facet_errors_when_unresolved(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    root = GtstRoot.create(
+        tmp_path / "root",
+        schema=["show", "shot", "name"],
+        default_filename_facet="name",
+    )
+    monkeypatch.setenv("GTST_ROOT", str(root.path))
+    asset_ref = {
+        "root_path": str(root.path),
+        "facets": {"show": "demo", "shot": "shot010", "name": ""},
+        "version": "",
+        "requested_version": "",
+        "requested_tag": "",
+        "file_path": "",
+        "metadata": {},
+    }
+
+    with pytest.raises(ValueError, match="Default filename facet"):
+        SaveGtstText().save("plate notes", asset_ref, "", False, "")

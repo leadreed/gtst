@@ -18,10 +18,7 @@ CATEGORY = "GTST"
 DEFAULT_TEXT_EXTENSION = ".txt"
 DEFAULT_IMAGE_EXTENSION = ".png"
 ASSET_REF_TYPE = "GTST_ASSET_REF"
-FACET_WIDGETS = ("project", "tree", "asset", "variant", "subvariant")
-ASSET_REF_SUGGESTION_WIDGETS = (*FACET_WIDGETS, "version", "tag")
-WIDGET_TO_SCHEMA_FIELD = {"subvariant": "subVariant"}
-SCHEMA_TO_WIDGET_FIELD = {"subVariant": "subvariant"}
+STATIC_SUGGESTION_WIDGETS = ("version", "tag")
 BROWSER_MODES = ("current", "latest only", "all versions")
 BROWSER_RESULT_LIMIT = 200
 TEXT_PREVIEW_LIMIT = 500
@@ -48,52 +45,33 @@ def _root() -> GtstRoot:
     return GtstRoot.from_env()
 
 
-def _facets(
-    project: str,
-    tree: str,
-    asset: str,
-    variant: str,
-    subvariant: str,
-) -> dict[str, str]:
-    return {
-        "project": project,
-        "tree": tree,
-        "asset": asset,
-        "variant": variant,
-        "subVariant": subvariant,
-    }
+def _input_schema() -> list[str]:
+    root_path = os.environ.get("GTST_ROOT", "").strip()
+    if not root_path:
+        return list(GtstConfig.default().schema)
+    try:
+        return list(GtstRoot.create(root_path).config.schema)
+    except Exception:
+        return list(GtstConfig.default().schema)
 
 
-def _schema_field(widget_name: str) -> str:
-    return WIDGET_TO_SCHEMA_FIELD.get(widget_name, widget_name)
+def _suggestion_widgets(schema: list[str] | None = None) -> tuple[str, ...]:
+    return (*(schema or _input_schema()), *STATIC_SUGGESTION_WIDGETS)
 
 
-def _widget_field(schema_name: str) -> str:
-    return SCHEMA_TO_WIDGET_FIELD.get(schema_name, schema_name)
+ASSET_REF_SUGGESTION_WIDGETS = _suggestion_widgets()
 
 
 def _asset_inputs() -> dict[str, tuple[str, dict[str, object]]]:
     options = _facet_options()
     return {
-        "project": _facet_input("Project facet value.", options["project"]),
-        "tree": _facet_input("Tree facet value.", options["tree"]),
-        "asset": _facet_input("Asset facet value.", options["asset"]),
-        "variant": _facet_input("Variant facet value.", options["variant"], "base"),
-        "subvariant": _facet_input(
-            "SubVariant facet value.", options["subVariant"], "default"
-        ),
+        field: _facet_input(f"{field} facet value.", options.get(field, []))
+        for field in options
     }
 
 
 def _browser_asset_inputs() -> dict[str, tuple[str, dict[str, object]]]:
-    options = _facet_options()
-    return {
-        "project": _facet_input("Project facet value.", options["project"]),
-        "tree": _facet_input("Tree facet value.", options["tree"]),
-        "asset": _facet_input("Asset facet value.", options["asset"]),
-        "variant": _facet_input("Variant facet value.", options["variant"]),
-        "subvariant": _facet_input("SubVariant facet value.", options["subVariant"]),
-    }
+    return _asset_inputs()
 
 
 def _facet_input(
@@ -145,7 +123,7 @@ def _resolve_file(
 
 
 def _facet_options() -> dict[str, list[str]]:
-    fields = GtstConfig.default().schema
+    fields = _input_schema()
     options = {field: [] for field in fields}
     root_path = os.environ.get("GTST_ROOT", "").strip()
     if not root_path:
@@ -186,8 +164,7 @@ def _prior_facets_for_field(
     field_index = root.config.schema.index(field)
     prior: dict[str, str] = {}
     for prior_field in root.config.schema[:field_index]:
-        widget_name = _widget_field(prior_field)
-        value = str(values.get(widget_name, values.get(prior_field, ""))).strip()
+        value = str(values.get(prior_field, "")).strip()
         if not value:
             return None
         prior[prior_field] = value
@@ -199,10 +176,19 @@ def _complete_facets_from_widget_values(
 ) -> dict[str, str] | None:
     facets: dict[str, str] = {}
     for schema_field in root.config.schema:
-        widget_name = _widget_field(schema_field)
-        value = str(values.get(widget_name, values.get(schema_field, ""))).strip()
+        value = str(values.get(schema_field, "")).strip()
         if not value:
             return None
+        facets[schema_field] = value
+    return facets
+
+
+def _facets_from_kwargs(root: GtstRoot, values: dict[str, Any]) -> dict[str, str]:
+    facets: dict[str, str] = {}
+    for schema_field in root.config.schema:
+        value = str(values.get(schema_field, "")).strip()
+        if not value:
+            raise ValueError(f"Missing GTST facet value: {schema_field}")
         facets[schema_field] = value
     return facets
 
@@ -243,13 +229,12 @@ def facet_suggestions_payload(
             "values": suggestions,
         }
 
-    schema_field = _schema_field(field)
-    prior = _prior_facets_for_field(root, schema_field, values or {})
-    suggestions = [] if prior is None else root.list_values(schema_field, facets=prior)
+    prior = _prior_facets_for_field(root, field, values or {})
+    suggestions = [] if prior is None else root.list_values(field, facets=prior)
     return {
         "root_path": str(root.path),
         "field": field,
-        "schema_field": schema_field,
+        "schema_field": field,
         "facets": prior or {},
         "values": suggestions,
     }
@@ -279,6 +264,8 @@ def _asset_ref(
                 "facets": facets,
                 "version": "",
                 "tags": [],
+                "ready_tag_name": root.config.ready_tag_name,
+                "is_ready": False,
             }
     else:
         metadata = _metadata(root, resolved)
@@ -324,6 +311,7 @@ def _metadata(root: GtstRoot, file_path: str) -> dict[str, Any]:
         ready_path = root.get_tagged_version(root.config.ready_tag_name, facets=facets)
     except GtstTagError:
         ready_path = None
+    is_ready = ready_path == file_path
     if ready_path == file_path:
         tags.add(root.config.ready_tag_name)
     return {
@@ -333,6 +321,8 @@ def _metadata(root: GtstRoot, file_path: str) -> dict[str, Any]:
         "facets": facets,
         "version": version,
         "tags": sorted(tags),
+        "ready_tag_name": root.config.ready_tag_name,
+        "is_ready": is_ready,
     }
 
 
@@ -345,10 +335,7 @@ def _browser_filter_facets(
 ) -> dict[str, str]:
     filters: dict[str, str] = {}
     for schema_field in root.config.schema:
-        widget_name = _widget_field(schema_field)
-        value = str(
-            (values or {}).get(widget_name, (values or {}).get(schema_field, ""))
-        ).strip()
+        value = str((values or {}).get(schema_field, "")).strip()
         if value:
             filters[schema_field] = value
     return filters
@@ -423,14 +410,9 @@ def _browser_item(root: GtstRoot, file_path: str) -> dict[str, Any]:
     metadata = _metadata(root, file_path)
     facets = metadata["facets"]
     media_type = _media_type(file_path)
-    label = " / ".join(
-        [
-            str(facets.get("asset", Path(file_path).stem)),
-            str(facets.get("variant", "")),
-            str(facets.get("subVariant", "")),
-        ]
-    )
-    label = " / ".join(part for part in label.split(" / ") if part)
+    label_parts = [str(facets.get(field, "")) for field in root.config.schema]
+    label_parts.append(str(metadata["version"]))
+    label = " / ".join(part for part in label_parts if part)
     item: dict[str, Any] = {
         "asset_ref": _asset_ref(
             root,
@@ -444,6 +426,7 @@ def _browser_item(root: GtstRoot, file_path: str) -> dict[str, Any]:
         "file_path": file_path,
         "metadata": metadata,
         "tags": metadata["tags"],
+        "is_ready": metadata["is_ready"],
         "media_type": media_type,
         "label": label,
         "subtitle": str(Path(file_path).name),
@@ -558,11 +541,26 @@ def _publish_existing_file(
     return published
 
 
-def _default_filename(asset: str, file_name: str, extension: str) -> str:
+def _filename_with_extension(name: str, extension: str) -> str:
+    if Path(name).suffix:
+        return name
+    return f"{name}{extension}"
+
+
+def _default_filename(
+    root: GtstRoot, facets: dict[str, str], file_name: str, extension: str
+) -> str:
     stripped = file_name.strip()
     if stripped:
-        return stripped
-    return f"{asset}{extension}"
+        return _filename_with_extension(stripped, extension)
+
+    facet = root.config.default_filename_facet
+    value = str(facets.get(facet, "")).strip()
+    if not value:
+        raise ValueError(
+            f"Default filename facet '{facet}' is missing or empty for this asset."
+        )
+    return _filename_with_extension(value, extension)
 
 
 def _output(result: tuple[Any, ...], ui: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -581,6 +579,7 @@ def _temp_preview_path(extension: str) -> tuple[Path, str]:
         temp_dir = Path(folder_paths.get_temp_directory())
 
     filename = f"gtst_{uuid.uuid4().hex}{extension}"
+    temp_dir.mkdir(parents=True, exist_ok=True)
     return temp_dir / filename, filename
 
 
@@ -670,18 +669,9 @@ class GtstAssetRef:
             }
         }
 
-    def resolve(
-        self,
-        project: str,
-        tree: str,
-        asset: str,
-        variant: str,
-        subvariant: str,
-        version: str,
-        tag: str,
-    ) -> dict[str, Any]:
+    def resolve(self, version: str = "", tag: str = "", **kwargs: Any) -> dict[str, Any]:
         root = _root()
-        facets = _facets(project, tree, asset, variant, subvariant)
+        facets = _facets_from_kwargs(root, kwargs)
         asset_ref = _asset_ref(root, facets, version=version, tag=tag)
         result = (
             asset_ref,
@@ -749,7 +739,7 @@ class SaveGtstImage:
     ) -> dict[str, Any]:
         root = _ref_root(asset_ref)
         facets = _ref_facets(asset_ref)
-        name = _default_filename(facets["asset"], file_name, DEFAULT_IMAGE_EXTENSION)
+        name = _default_filename(root, facets, file_name, DEFAULT_IMAGE_EXTENSION)
         with tempfile.TemporaryDirectory() as temp_dir:
             source = Path(temp_dir) / name
             _save_image_tensor(image, source)
@@ -822,7 +812,7 @@ class SaveGtstText:
     ) -> dict[str, Any]:
         root = _ref_root(asset_ref)
         facets = _ref_facets(asset_ref)
-        name = _default_filename(facets["asset"], file_name, DEFAULT_TEXT_EXTENSION)
+        name = _default_filename(root, facets, file_name, DEFAULT_TEXT_EXTENSION)
         with tempfile.TemporaryDirectory() as temp_dir:
             source = Path(temp_dir) / name
             source.write_text(text, encoding="utf-8")
@@ -874,6 +864,7 @@ class SaveGtstVideo:
             "required": {
                 "video_path": ("STRING", {"default": ""}),
                 "asset_ref": (ASSET_REF_TYPE, {"forceInput": True}),
+                "file_name": ("STRING", {"default": ""}),
                 "mark_ready": ("BOOLEAN", {"default": False}),
                 "tags": (
                     "STRING",
@@ -886,12 +877,19 @@ class SaveGtstVideo:
         self,
         video_path: str,
         asset_ref: dict[str, Any],
+        file_name: str,
         mark_ready: bool,
         tags: str,
     ) -> dict[str, Any]:
         root = _ref_root(asset_ref)
         facets = _ref_facets(asset_ref)
-        published = _publish_existing_file(root, video_path, facets, mark_ready, tags)
+        source_video = Path(video_path)
+        extension = source_video.suffix or ".mp4"
+        name = _default_filename(root, facets, file_name, extension)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / name
+            shutil.copy2(source_video, source)
+            published = _publish_existing_file(root, str(source), facets, mark_ready, tags)
         result = (
             _asset_ref(root, facets, file_path=published),
             published,
@@ -1009,17 +1007,13 @@ class BrowseGtst:
     def browse(
         self,
         mode: str,
-        project: str,
-        tree: str,
-        asset: str,
-        variant: str,
-        subvariant: str,
         version: str,
         tag: str,
         selected_file_path: str,
         preview_item_size: int,
+        **kwargs: Any,
     ) -> dict[str, Any]:
-        del mode, project, tree, asset, variant, subvariant, version, tag, preview_item_size
+        del mode, version, tag, preview_item_size, kwargs
         return _output(selected_browser_asset(selected_file_path))
 
 
