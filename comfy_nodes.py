@@ -22,7 +22,7 @@ FACET_WIDGETS = ("project", "tree", "asset", "variant", "subvariant")
 ASSET_REF_SUGGESTION_WIDGETS = (*FACET_WIDGETS, "version", "tag")
 WIDGET_TO_SCHEMA_FIELD = {"subvariant": "subVariant"}
 SCHEMA_TO_WIDGET_FIELD = {"subVariant": "subvariant"}
-BROWSER_MODES = ("latest only", "all versions", "tagged")
+BROWSER_MODES = ("current", "latest only", "all versions", "tagged")
 BROWSER_RESULT_LIMIT = 200
 TEXT_PREVIEW_LIMIT = 500
 IMAGE_EXTENSIONS = {".apng", ".avif", ".bmp", ".gif", ".jpeg", ".jpg", ".png", ".webp"}
@@ -474,9 +474,9 @@ def _browser_paths_for_facets(
         return paths
 
     try:
-        if tag:
-            return [root.get_latest_by_tag(tag, facets=facets)]
-        return [root.get_current(facets=facets)]
+        if mode == "current":
+            return [root.get_current(facets=facets)]
+        return [root.get_latest(facets=facets)]
     except GtstError:
         return []
 
@@ -488,7 +488,7 @@ def browser_results_payload(
     limit: int = BROWSER_RESULT_LIMIT,
 ) -> dict[str, Any]:
     root = _root()
-    mode = mode if mode in BROWSER_MODES else "latest only"
+    mode = mode if mode in BROWSER_MODES else "current"
     filters = _browser_filter_facets(root, values)
     version = str((values or {}).get("version", "")).strip()
     tag = str((values or {}).get("tag", "")).strip()
@@ -979,7 +979,7 @@ class BrowseGtst:
     def INPUT_TYPES(cls) -> dict[str, dict[str, object]]:
         return {
             "required": {
-                "mode": (list(BROWSER_MODES), {"default": "latest only"}),
+                "mode": (list(BROWSER_MODES), {"default": "current"}),
                 **_browser_asset_inputs(),
                 "version": _version_input(),
                 "tag": _tag_input(),

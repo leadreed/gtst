@@ -60,7 +60,7 @@ def _register_routes() -> None:
     @PromptServer.instance.routes.get("/gtst/browser_results")
     async def gtst_browser_results(request):  # type: ignore[no-untyped-def]
         query = request.rel_url.query
-        mode = str(query.get("mode", "latest only"))
+        mode = str(query.get("mode", "current"))
         values = {
             name: str(query.get(name, ""))
             for name in ASSET_REF_SUGGESTION_WIDGETS

@@ -198,7 +198,7 @@ def test_video_nodes_publish_and_load_path(tmp_path: Path, monkeypatch: Any) -> 
     assert LoadGtstVideo().load(published_ref)["result"][0] == published
 
 
-def test_browser_latest_prefers_ready_then_current(
+def test_browser_current_prefers_ready_then_latest(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
     asset_ref = make_ref(tmp_path, monkeypatch, tree="texts", asset="caption01")
@@ -217,13 +217,32 @@ def test_browser_latest_prefers_ready_then_current(
         "",
     )["result"]
 
-    current = browser_results_payload("latest only", {"project": "project1"})
+    current = browser_results_payload("current", {"project": "project1"})
     assert [item["file_path"] for item in current["items"]] == [second_path]
 
     MarkGtstReady().mark_ready(second_ref, "v001")
-    ready = browser_results_payload("latest only", {"project": "project1"})
+    ready = browser_results_payload("current", {"project": "project1"})
     assert [item["file_path"] for item in ready["items"]] == [first_path]
     assert ready["items"][0]["asset_ref"]["version"] == first_ref["version"]
+
+
+def test_browser_latest_only_ignores_ready(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    asset_ref = make_ref(tmp_path, monkeypatch, tree="texts", asset="caption01")
+    SaveGtstText().save("first caption", asset_ref, "", False, "")
+    second_path = SaveGtstText().save(
+        "second caption",
+        asset_ref,
+        "",
+        False,
+        "",
+    )["result"][1]
+    MarkGtstReady().mark_ready(asset_ref, "v001")
+
+    payload = browser_results_payload("latest only", {"project": "project1"})
+
+    assert [item["file_path"] for item in payload["items"]] == [second_path]
 
 
 def test_browser_all_versions_and_tagged_filter(

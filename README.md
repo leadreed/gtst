@@ -325,8 +325,10 @@ then type to filter them or enter a new value. `variant` defaults to `base`, and
 facet fields match any existing value. Its result mode controls which concrete
 versions appear in the preview grid:
 
-- `latest only`: show one version per matching asset, preferring `ready` and
-  falling back to latest/current.
+- `current`: show one version per matching asset, preferring `ready` and
+  falling back to latest.
+- `latest only`: show the true latest version per matching asset, ignoring
+  `ready`.
 - `all versions`: show every matching version file.
 - `tagged`: show versions matching the `tag` input.
 

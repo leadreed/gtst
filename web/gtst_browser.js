@@ -44,8 +44,17 @@ function ensureStyles() {
       flex: 0 0 auto;
       overflow: hidden;
       padding: 5px 8px;
+    }
+
+    .gtst-browser-status-line {
+      display: block;
+      overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    .gtst-browser-status-line + .gtst-browser-status-line {
+      margin-top: 2px;
     }
 
     .gtst-browser-items {
@@ -192,7 +201,7 @@ function tileSize(node) {
 
 function browserUrl(node) {
   const params = new URLSearchParams({
-    mode: widgetValue(node, "mode") || "latest only",
+    mode: widgetValue(node, "mode") || "current",
     limit: String(RESULT_LIMIT),
   });
   for (const [name, value] of Object.entries(browserValues(node))) {
@@ -237,6 +246,11 @@ function ensureOverlay(node) {
 
   const status = document.createElement("div");
   status.className = "gtst-browser-status";
+  const resultStatus = document.createElement("span");
+  resultStatus.className = "gtst-browser-status-line";
+  const selectionStatus = document.createElement("span");
+  selectionStatus.className = "gtst-browser-status-line";
+  status.append(resultStatus, selectionStatus);
 
   const items = document.createElement("div");
   items.className = "gtst-browser-items";
@@ -247,6 +261,8 @@ function ensureOverlay(node) {
   node.gtstBrowser = {
     element,
     items,
+    resultStatus,
+    selectionStatus,
     status,
     payloadItems: [],
     requestId: 0,
@@ -254,9 +270,23 @@ function ensureOverlay(node) {
   return node.gtstBrowser;
 }
 
-function setStatus(node, text) {
+function setResultStatus(node, text) {
   const state = ensureOverlay(node);
-  state.status.textContent = text;
+  state.resultStatus.textContent = text;
+}
+
+function selectedItem(node) {
+  const selected = selectedPath(node);
+  if (!selected) {
+    return null;
+  }
+  return ensureOverlay(node).payloadItems.find((item) => item.file_path === selected) ?? null;
+}
+
+function updateSelectionStatus(node) {
+  const state = ensureOverlay(node);
+  const item = selectedItem(node);
+  state.selectionStatus.textContent = item?.label ? `Selected: ${item.label}` : "No selection";
 }
 
 function renderPreview(item) {
@@ -325,7 +355,8 @@ function renderTile(node, item) {
   label.append(title, subtitle);
   button.append(renderPreview(item), label);
   button.addEventListener("click", () => {
-    setWidgetValue(node, "selected_file_path", item.file_path);
+    const nextValue = item.file_path === selectedPath(node) ? "" : item.file_path;
+    setWidgetValue(node, "selected_file_path", nextValue);
     renderGrid(node);
   });
   return button;
@@ -339,6 +370,7 @@ function renderGrid(node) {
   state.items.replaceChildren(
     ...state.payloadItems.map((item) => renderTile(node, item))
   );
+  updateSelectionStatus(node);
 }
 
 async function refreshBrowser(node) {
@@ -347,7 +379,8 @@ async function refreshBrowser(node) {
   }
   const state = ensureOverlay(node);
   const requestId = ++state.requestId;
-  setStatus(node, "Loading previews...");
+  setResultStatus(node, "Loading previews...");
+  updateSelectionStatus(node);
 
   try {
     const response = await api.fetchApi(browserUrl(node));
@@ -364,13 +397,13 @@ async function refreshBrowser(node) {
 
     const count = state.payloadItems.length;
     if (payload.error) {
-      setStatus(node, payload.error);
+      setResultStatus(node, payload.error);
     } else if (!count) {
-      setStatus(node, "No previews");
+      setResultStatus(node, "No previews");
     } else if (payload.capped) {
-      setStatus(node, `Showing first ${count} previews`);
+      setResultStatus(node, `Showing first ${count} previews`);
     } else {
-      setStatus(node, `${count} preview${count === 1 ? "" : "s"}`);
+      setResultStatus(node, `${count} preview${count === 1 ? "" : "s"}`);
     }
     renderGrid(node);
   } catch (error) {
@@ -378,7 +411,7 @@ async function refreshBrowser(node) {
       return;
     }
     state.payloadItems = [];
-    setStatus(node, String(error));
+    setResultStatus(node, String(error));
     renderGrid(node);
   }
 }
@@ -397,8 +430,8 @@ function positionOverlay(node) {
   state.element.style.display = "flex";
   state.element.style.left = `${x}px`;
   state.element.style.top = `${y}px`;
-  state.element.style.width = `${width * scale}px`;
-  state.element.style.height = `${height * scale}px`;
+  state.element.style.width = `${width}px`;
+  state.element.style.height = `${height}px`;
 }
 
 function startOverlayLoop() {
