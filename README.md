@@ -314,10 +314,9 @@ uninitialized roots are created with the default GTST config.
 `GTST Asset Ref` is the source node for the others. Connect its `asset_ref`
 output to load, save, mark-ready, and tag nodes. The facet fields are editable
 autocomplete fields populated only from existing values under `GTST_ROOT`.
-Focus a field to show suggestions, then type to filter them or enter a new
-value. `variant` defaults to `base`, and `subVariant` defaults to `default`.
-Restart or refresh ComfyUI after changing the GTST root contents if you need the
-suggestions to reload.
+Focus a field to show valid suggestions for the facets already set before it,
+then type to filter them or enter a new value. `variant` defaults to `base`, and
+`subVariant` defaults to `default`.
 
 Image load/save nodes use the Pillow, NumPy, and Torch libraries already present
 in a normal ComfyUI Python environment.
