@@ -330,7 +330,8 @@ versions appear in the preview grid:
 - `latest only`: show the true latest version per matching asset, ignoring
   `ready`.
 - `all versions`: show every matching version file.
-- `tagged`: show versions matching the `tag` input.
+
+Use the `tag` input to filter the displayed versions by tag.
 
 Clicking a preview selects that exact version for the node output. If the
 filters change and the selected file is no longer visible, the selection is

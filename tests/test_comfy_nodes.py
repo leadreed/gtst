@@ -245,7 +245,7 @@ def test_browser_latest_only_ignores_ready(
     assert [item["file_path"] for item in payload["items"]] == [second_path]
 
 
-def test_browser_all_versions_and_tagged_filter(
+def test_browser_all_versions_and_tag_filter(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
     asset_ref = make_ref(tmp_path, monkeypatch, tree="texts", asset="caption01")
@@ -264,9 +264,8 @@ def test_browser_all_versions_and_tagged_filter(
         second_path,
     ]
 
-    tagged = browser_results_payload("tagged", {**values, "tag": "selected"})
+    tagged = browser_results_payload("all versions", {**values, "tag": "selected"})
     assert [item["file_path"] for item in tagged["items"]] == [first_path]
-    assert browser_results_payload("tagged", values)["items"] == []
 
 
 def test_browser_wildcards_text_preview_and_cap(

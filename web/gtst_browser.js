@@ -10,6 +10,7 @@ const WIDGET_ROW_HEIGHT = 20;
 
 const browserNodes = new Set();
 let animationStarted = false;
+let executionRefreshTimer = null;
 
 function isBrowserNode(node) {
   return node?.comfyClass === "BrowseGTST" || node?.type === "BrowseGTST";
@@ -98,7 +99,45 @@ function ensureStyles() {
       min-height: 0;
       overflow: hidden;
       padding: 6px;
+      position: relative;
       width: 100%;
+    }
+
+    .gtst-browser-version-badge {
+      align-items: center;
+      background: rgba(12, 15, 19, 0.82);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 4px;
+      box-sizing: border-box;
+      color: #f4f7fb;
+      display: inline-flex;
+      font-size: 11px;
+      font-weight: 600;
+      gap: 4px;
+      left: 6px;
+      line-height: 1;
+      max-width: calc(100% - 12px);
+      overflow: hidden;
+      padding: 4px 5px;
+      pointer-events: none;
+      position: absolute;
+      text-overflow: ellipsis;
+      top: 6px;
+      white-space: nowrap;
+      z-index: 1;
+    }
+
+    .gtst-browser-version-badge[data-ready="true"] {
+      background: rgba(38, 118, 74, 0.92);
+      border-color: rgba(145, 230, 170, 0.78);
+      color: #f4fff7;
+      box-shadow: 0 0 0 1px rgba(18, 70, 42, 0.35);
+    }
+
+    .gtst-browser-ready-check {
+      color: #ffffff;
+      font-size: 12px;
+      line-height: 1;
     }
 
     .gtst-browser-preview img,
@@ -292,6 +331,7 @@ function updateSelectionStatus(node) {
 function renderPreview(item) {
   const preview = document.createElement("div");
   preview.className = "gtst-browser-preview";
+  preview.append(renderVersionBadge(item));
 
   if (item.media_type === "image") {
     const image = document.createElement("img");
@@ -333,6 +373,23 @@ function renderPreview(item) {
   file.textContent = (item.file_path?.split(".").pop() || "file").slice(0, 5);
   preview.append(file);
   return preview;
+}
+
+function renderVersionBadge(item) {
+  const badge = document.createElement("div");
+  badge.className = "gtst-browser-version-badge";
+  badge.textContent = item.version ?? "";
+  const isReady = Array.isArray(item.tags) && item.tags.includes("ready");
+  badge.dataset.ready = String(isReady);
+
+  if (isReady) {
+    const check = document.createElement("span");
+    check.className = "gtst-browser-ready-check";
+    check.textContent = "✓";
+    badge.append(check);
+  }
+
+  return badge;
 }
 
 function renderTile(node, item) {
@@ -425,6 +482,32 @@ function scheduleRefreshBrowser(node) {
   }, 0);
 }
 
+function scheduleRefreshAllBrowsers() {
+  window.clearTimeout(executionRefreshTimer);
+  executionRefreshTimer = window.setTimeout(() => {
+    for (const node of browserNodes) {
+      scheduleRefreshBrowser(node);
+    }
+  }, 100);
+}
+
+function installExecutionRefresh() {
+  api.addEventListener?.("executing", (event) => {
+    if (event.detail === null || event.detail?.node === null) {
+      scheduleRefreshAllBrowsers();
+    }
+  });
+  api.addEventListener?.("execution_success", scheduleRefreshAllBrowsers);
+  api.addEventListener?.("execution_error", scheduleRefreshAllBrowsers);
+  api.addEventListener?.("execution_interrupted", scheduleRefreshAllBrowsers);
+  api.addEventListener?.("status", (event) => {
+    const remaining = Number(event.detail?.exec_info?.queue_remaining ?? 0);
+    if (remaining === 0) {
+      scheduleRefreshAllBrowsers();
+    }
+  });
+}
+
 function positionOverlay(node) {
   const state = ensureOverlay(node);
   if (!node.graph || node.flags?.collapsed) {
@@ -500,6 +583,7 @@ app.registerExtension({
   setup() {
     ensureStyles();
     startOverlayLoop();
+    installExecutionRefresh();
   },
 
   async beforeRegisterNodeDef(nodeType, nodeData) {

@@ -22,7 +22,7 @@ FACET_WIDGETS = ("project", "tree", "asset", "variant", "subvariant")
 ASSET_REF_SUGGESTION_WIDGETS = (*FACET_WIDGETS, "version", "tag")
 WIDGET_TO_SCHEMA_FIELD = {"subvariant": "subVariant"}
 SCHEMA_TO_WIDGET_FIELD = {"subVariant": "subvariant"}
-BROWSER_MODES = ("current", "latest only", "all versions", "tagged")
+BROWSER_MODES = ("current", "latest only", "all versions")
 BROWSER_RESULT_LIMIT = 200
 TEXT_PREVIEW_LIMIT = 500
 IMAGE_EXTENSIONS = {".apng", ".avif", ".bmp", ".gif", ".jpeg", ".jpg", ".png", ".webp"}
@@ -460,11 +460,6 @@ def _browser_paths_for_facets(
             return []
         return [file_path]
 
-    if mode == "tagged":
-        if not tag:
-            return []
-        return root.find_by_tag(tag, facets=facets)
-
     if mode == "all versions":
         paths: list[str] = []
         for asset_version in root.list_versions(facets=facets):
@@ -474,6 +469,8 @@ def _browser_paths_for_facets(
         return paths
 
     try:
+        if tag:
+            return [root.get_latest_by_tag(tag, facets=facets)]
         if mode == "current":
             return [root.get_current(facets=facets)]
         return [root.get_latest(facets=facets)]
