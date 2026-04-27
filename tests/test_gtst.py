@@ -65,6 +65,31 @@ def test_from_env_opens_gtst_root(
     assert root.path == created.path
 
 
+def test_from_env_initializes_missing_gtst_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root_path = tmp_path / "root"
+    monkeypatch.setenv("GTST_ROOT", str(root_path))
+
+    root = GtstRoot.from_env()
+
+    assert root.path == root_path.resolve()
+    assert (root.path / "gtst.json").is_file()
+
+
+def test_from_env_initializes_unconfigured_gtst_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root_path = tmp_path / "root"
+    root_path.mkdir()
+    monkeypatch.setenv("GTST_ROOT", str(root_path))
+
+    root = GtstRoot.from_env()
+
+    assert root.path == root_path.resolve()
+    assert (root.path / "gtst.json").is_file()
+
+
 @pytest.mark.parametrize("value", [None, ""])
 def test_from_env_requires_gtst_root(
     value: str | None, monkeypatch: pytest.MonkeyPatch

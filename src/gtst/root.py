@@ -37,7 +37,7 @@ class GtstRoot:
             raise GtstRootError(
                 "GTST_ROOT is not set. Run 'gtst init ROOT' and export GTST_ROOT."
             )
-        return cls(root_path)
+        return cls.create(root_path)
 
     @classmethod
     def create(

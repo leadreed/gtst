@@ -46,7 +46,9 @@ export GTST_ROOT=/path/to/myGTSTroot
 ```
 
 GTST uses `GTST_ROOT` as the active root for both CLI commands and the Python
-API. `gtst init ROOT` is the only CLI command that does not require it.
+API. When `GTST_ROOT` points to a missing or uninitialized directory, GTST
+creates the default root configuration automatically. `gtst init ROOT` is the
+only CLI command that does not require `GTST_ROOT`.
 
 ## CLI Usage
 
@@ -266,6 +268,41 @@ Find the latest version carrying a tag:
 ```python
 favorite = root.get_latest_by_tag("favorite", **facets)
 ```
+
+## ComfyUI Custom Nodes
+
+GTST can be loaded directly as a ComfyUI custom node package. Clone this
+repository into ComfyUI's `custom_nodes` folder and restart ComfyUI:
+
+```bash
+cd /path/to/ComfyUI/custom_nodes
+git clone <repo-url> gtst
+```
+
+The repository root exposes ComfyUI's `NODE_CLASS_MAPPINGS`, and it adds the
+local `src` folder to Python's import path when ComfyUI loads it. No separate
+package install is required for the current GTST nodes.
+
+Available nodes:
+
+- `GTST Asset Ref`: build a reusable asset reference from facets plus an
+  optional version or tag. Outputs the resolved file path and metadata JSON.
+- `Load GTST Image`: load a GTST image as ComfyUI `IMAGE` and `MASK`.
+- `Save GTST Image`: save a ComfyUI image as a new GTST version, optionally
+  marking it ready and adding tags.
+- `Load GTST Text`: load a GTST text asset as a string.
+- `Save GTST Text`: save text as a new GTST version for prompts, captions,
+  JSON, notes, or metadata.
+- `Load GTST Video`: resolve a GTST video asset and output the video file path.
+- `Save GTST Video`: publish an existing video file path as a new GTST version.
+- `Mark GTST Ready`: mark a specific version as the ready version for an asset.
+- `Tag GTST Version`: add a custom tag to a specific version.
+- `Browse GTST`: list facet values or asset versions as JSON.
+
+Each node accepts `root_path`. Leave it empty to use `GTST_ROOT`, or set it to
+an explicit GTST root path. Missing or uninitialized roots are created with the
+default GTST config. Image load/save nodes use the Pillow, NumPy, and Torch
+libraries already present in a normal ComfyUI Python environment.
 
 ## Tags
 
