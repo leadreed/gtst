@@ -16,6 +16,7 @@ from comfy_nodes import (
     SaveGtstText,
     SaveGtstVideo,
     TagGtstVersion,
+    facet_suggestions_payload,
 )
 
 
@@ -231,6 +232,61 @@ def test_browse_lists_values_and_versions(tmp_path: Path, monkeypatch: Any) -> N
         )[0]
     )
     assert versions["versions"] == ["v001"]
+
+
+def test_facet_suggestions_are_hierarchy_aware(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    first_ref = make_ref(tmp_path, monkeypatch, tree="images", asset="hero")
+    SaveGtstText().save("placeholder", first_ref, "", False, "")
+    second_ref = make_ref(tmp_path, monkeypatch, tree="prompts", asset="caption")
+    SaveGtstText().save("placeholder", second_ref, "", False, "")
+
+    project_payload = facet_suggestions_payload("project", {})
+    tree_payload = facet_suggestions_payload("tree", {"project": "project1"})
+    asset_payload = facet_suggestions_payload(
+        "asset", {"project": "project1", "tree": "images"}
+    )
+
+    assert project_payload["values"] == ["project1"]
+    assert tree_payload["values"] == ["images", "prompts"]
+    assert asset_payload["values"] == ["hero"]
+
+
+def test_facet_suggestions_return_empty_for_missing_prior_facets(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    asset_ref = make_ref(tmp_path, monkeypatch, tree="images", asset="hero")
+    SaveGtstText().save("placeholder", asset_ref, "", False, "")
+
+    assert facet_suggestions_payload("tree", {})["values"] == []
+    assert facet_suggestions_payload("asset", {"project": "project1"})["values"] == []
+
+
+def test_facet_suggestions_map_subvariant_field(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    asset_ref = make_ref(tmp_path, monkeypatch, tree="images", asset="hero")
+    SaveGtstText().save("placeholder", asset_ref, "", False, "")
+
+    payload = facet_suggestions_payload(
+        "subvariant",
+        {
+            "project": "project1",
+            "tree": "images",
+            "asset": "hero",
+            "variant": "base",
+        },
+    )
+
+    assert payload["schema_field"] == "subVariant"
+    assert payload["facets"] == {
+        "project": "project1",
+        "tree": "images",
+        "asset": "hero",
+        "variant": "base",
+    }
+    assert payload["values"] == ["default"]
 
 
 def test_asset_ref_inputs_are_strings_with_existing_facet_values_only(

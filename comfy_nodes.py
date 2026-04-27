@@ -17,6 +17,9 @@ CATEGORY = "GTST"
 DEFAULT_TEXT_EXTENSION = ".txt"
 DEFAULT_IMAGE_EXTENSION = ".png"
 ASSET_REF_TYPE = "GTST_ASSET_REF"
+FACET_WIDGETS = ("project", "tree", "asset", "variant", "subvariant")
+WIDGET_TO_SCHEMA_FIELD = {"subvariant": "subVariant"}
+SCHEMA_TO_WIDGET_FIELD = {"subVariant": "subvariant"}
 
 
 def _root() -> GtstRoot:
@@ -37,6 +40,14 @@ def _facets(
         "variant": variant,
         "subVariant": subvariant,
     }
+
+
+def _schema_field(widget_name: str) -> str:
+    return WIDGET_TO_SCHEMA_FIELD.get(widget_name, widget_name)
+
+
+def _widget_field(schema_name: str) -> str:
+    return SCHEMA_TO_WIDGET_FIELD.get(schema_name, schema_name)
 
 
 def _asset_inputs() -> dict[str, tuple[str, dict[str, object]]]:
@@ -131,6 +142,39 @@ def _collect_facet_values(root: GtstRoot, field: str) -> set[str]:
 
     walk({}, 0)
     return results
+
+
+def _prior_facets_for_field(
+    root: GtstRoot, field: str, values: dict[str, str]
+) -> dict[str, str] | None:
+    if field not in root.config.schema:
+        raise ValueError(f"Unknown GTST facet field: {field}")
+
+    field_index = root.config.schema.index(field)
+    prior: dict[str, str] = {}
+    for prior_field in root.config.schema[:field_index]:
+        widget_name = _widget_field(prior_field)
+        value = str(values.get(widget_name, values.get(prior_field, ""))).strip()
+        if not value:
+            return None
+        prior[prior_field] = value
+    return prior
+
+
+def facet_suggestions_payload(
+    field: str, values: dict[str, str] | None = None
+) -> dict[str, Any]:
+    root = _root()
+    schema_field = _schema_field(field)
+    prior = _prior_facets_for_field(root, schema_field, values or {})
+    suggestions = [] if prior is None else root.list_values(schema_field, facets=prior)
+    return {
+        "root_path": str(root.path),
+        "field": field,
+        "schema_field": schema_field,
+        "facets": prior or {},
+        "values": suggestions,
+    }
 
 
 def _asset_ref(
