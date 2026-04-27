@@ -286,7 +286,8 @@ package install is required for the current GTST nodes.
 Available nodes:
 
 - `GTST Asset Ref`: build a reusable asset reference from facets plus an
-  optional version or tag. Outputs the resolved file path and metadata JSON.
+  optional version or tag. Outputs a `GTST_ASSET_REF` handle, the resolved file
+  path when a version exists, and metadata JSON.
 - `Load GTST Image`: load a GTST image as ComfyUI `IMAGE` and `MASK`.
 - `Save GTST Image`: save a ComfyUI image as a new GTST version, optionally
   marking it ready and adding tags.
@@ -299,10 +300,18 @@ Available nodes:
 - `Tag GTST Version`: add a custom tag to a specific version.
 - `Browse GTST`: list facet values or asset versions as JSON.
 
-Each node accepts `root_path`. Leave it empty to use `GTST_ROOT`, or set it to
-an explicit GTST root path. Missing or uninitialized roots are created with the
-default GTST config. Image load/save nodes use the Pillow, NumPy, and Torch
-libraries already present in a normal ComfyUI Python environment.
+All nodes use `GTST_ROOT`; there are no root path inputs in the ComfyUI nodes.
+Set `GTST_ROOT` in the environment that starts ComfyUI. Missing or
+uninitialized roots are created with the default GTST config.
+
+`GTST Asset Ref` is the source node for the others. Connect its `asset_ref`
+output to load, save, mark-ready, and tag nodes. The facet fields are ComfyUI
+combo dropdowns populated from existing values under `GTST_ROOT`, so they can be
+searched in the ComfyUI dropdown UI. Restart or refresh ComfyUI after changing
+the GTST root contents if you need the dropdown options to reload.
+
+Image load/save nodes use the Pillow, NumPy, and Torch libraries already present
+in a normal ComfyUI Python environment.
 
 ## Tags
 
