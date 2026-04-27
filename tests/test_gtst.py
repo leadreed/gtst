@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,8 @@ from gtst import (
     GtstVersionError,
 )
 from gtst.cli import main as cli_main
+import gtst.locking as locking
+from gtst.locking import FileLock
 
 
 def write_source(tmp_path: Path, name: str = "simpleBox.txt", text: str = "box") -> Path:
@@ -109,6 +112,20 @@ def test_root_constructor_requires_path(monkeypatch: pytest.MonkeyPatch) -> None
 
     with pytest.raises(TypeError):
         GtstRoot()
+
+
+def test_locking_does_not_import_posix_lock_module_at_import_time() -> None:
+    assert "fcntl" not in locking.__dict__
+
+
+def test_file_lock_creates_lock_file(tmp_path: Path) -> None:
+    lock_path = tmp_path / "gtst.lock"
+
+    with FileLock(lock_path):
+        assert lock_path.is_file()
+
+    if sys.platform == "win32":
+        assert lock_path.read_text(encoding="utf-8") == "\0"
 
 
 @pytest.mark.parametrize(
