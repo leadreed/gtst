@@ -364,6 +364,11 @@ class GstsRoot:
             raise GstsVersionError("Version must be an integer, 'latest', or v-prefixed string.")
         if version.isdigit():
             return self._format_version(int(version))
+        if re.fullmatch(r"v\d+", version):
+            number = int(version[1:])
+            if number < 1:
+                raise GstsVersionError("Version number must be at least 1.")
+            return self._format_version(number)
         number = self._version_number_from_name(version)
         if number is None:
             raise GstsVersionError(f"Invalid version: {version}")

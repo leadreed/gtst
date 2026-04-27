@@ -112,6 +112,7 @@ def test_get_latest_and_explicit_versions_return_asset_file(tmp_path: Path) -> N
     second = root.publish(source, **facets())
 
     assert root.get_version(version=1, **facets()) == first
+    assert root.get_version(version="v1", **facets()) == first
     assert root.get_version(version="v001", **facets()) == first
     assert root.get_latest(**facets()) == second
 
