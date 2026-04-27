@@ -7,6 +7,7 @@ const STYLE_ID = "gtst-browser-style";
 const RESULT_LIMIT = 200;
 const DEFAULT_NODE_SIZE = [420, 520];
 const WIDGET_ROW_HEIGHT = 20;
+const BROWSER_MODES = ["current", "latest only", "all versions"];
 
 const browserNodes = new Set();
 let animationStarted = false;
@@ -223,6 +224,18 @@ function setWidgetValue(node, name, value) {
   node.setDirtyCanvas?.(true, true);
 }
 
+function modeWidget(node) {
+  return node.widgets?.find((widget) => widget.name === "mode");
+}
+
+function normalizedMode(node) {
+  const mode = modeWidget(node);
+  sanitizeModeWidget(node, mode);
+  return BROWSER_MODES.includes(String(mode?.value ?? ""))
+    ? String(mode.value)
+    : "current";
+}
+
 function browserValues(node) {
   return Object.fromEntries(
     SUGGESTION_WIDGETS.map((name) => [name, widgetValue(node, name)])
@@ -240,7 +253,7 @@ function tileSize(node) {
 
 function browserUrl(node) {
   const params = new URLSearchParams({
-    mode: widgetValue(node, "mode") || "current",
+    mode: normalizedMode(node),
     limit: String(RESULT_LIMIT),
   });
   for (const [name, value] of Object.entries(browserValues(node))) {
@@ -378,7 +391,7 @@ function renderPreview(item) {
 function renderVersionBadge(item) {
   const badge = document.createElement("div");
   badge.className = "gtst-browser-version-badge";
-  badge.textContent = item.version ?? "";
+  badge.textContent = displayVersion(item.version);
   const isReady = Array.isArray(item.tags) && item.tags.includes("ready");
   badge.dataset.ready = String(isReady);
 
@@ -390,6 +403,10 @@ function renderVersionBadge(item) {
   }
 
   return badge;
+}
+
+function displayVersion(version) {
+  return String(version ?? "").replace(/^v0*(\d+)$/, "v$1");
 }
 
 function renderTile(node, item) {
@@ -547,7 +564,8 @@ function wrapBrowserWidgets(node) {
   const selected = node.widgets?.find((widget) => widget.name === "selected_file_path");
   hideWidget(selected);
 
-  const mode = node.widgets?.find((widget) => widget.name === "mode");
+  const mode = modeWidget(node);
+  sanitizeModeWidget(node, mode);
   if (mode && !mode.gtstBrowserWrapped) {
     mode.gtstBrowserWrapped = true;
     const original = mode.callback;
@@ -567,6 +585,23 @@ function wrapBrowserWidgets(node) {
       renderGrid(node);
       return result;
     };
+  }
+}
+
+function sanitizeModeWidget(node, mode) {
+  if (!mode) {
+    return;
+  }
+  mode.options ??= {};
+  mode.options.values = BROWSER_MODES;
+  mode.options.serialize = true;
+  if (Array.isArray(mode.values)) {
+    mode.values = BROWSER_MODES;
+  }
+  if (!BROWSER_MODES.includes(String(mode.value ?? ""))) {
+    mode.value = "current";
+    mode.callback?.("current", app.canvas, node, app.canvas?.graph_mouse, {});
+    node.setDirtyCanvas?.(true, true);
   }
 }
 

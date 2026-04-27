@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from comfy_nodes import (
     NODE_CLASS_MAPPINGS,
     NODE_DISPLAY_NAME_MAPPINGS,
@@ -90,6 +92,41 @@ def test_asset_ref_resolve_has_no_preview_ui(
 
     assert "ui" not in result
     assert result["result"][1] == ""
+
+
+def test_asset_ref_missing_explicit_version_errors(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    asset_ref = make_ref(tmp_path, monkeypatch)
+    SaveGtstText().save("first prompt", asset_ref, "", False, "")
+
+    with pytest.raises(Exception, match="Version folder does not exist"):
+        GtstAssetRef().resolve(
+            "project1",
+            "prompts",
+            "heroPrompt",
+            "base",
+            "default",
+            "v999",
+            "",
+        )
+
+
+def test_pathless_asset_ref_honors_requested_version(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    asset_ref = make_ref(tmp_path, monkeypatch)
+    SaveGtstText().save("first prompt", asset_ref, "", False, "")
+    SaveGtstText().save("second prompt", asset_ref, "", False, "")
+
+    pathless_ref = {
+        **asset_ref,
+        "requested_version": "v999",
+        "file_path": "",
+    }
+
+    with pytest.raises(Exception, match="Version folder does not exist"):
+        LoadGtstText().load(pathless_ref)
 
 
 def test_text_nodes_asset_ref_tag_and_ready(

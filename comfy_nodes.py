@@ -269,6 +269,8 @@ def _asset_ref(
             resolved = _resolve_file(root, facets, version=version, tag=tag)
             metadata = _metadata(root, resolved)
         except GtstError:
+            if version.strip() or tag.strip():
+                raise
             resolved = ""
             metadata = {
                 "root_path": str(root.path),
@@ -307,7 +309,11 @@ def _ref_file_path(asset_ref: dict[str, Any]) -> str:
     if file_path:
         return file_path
     root = _ref_root(asset_ref)
-    return _resolve_file(root, _ref_facets(asset_ref))
+    version = str(
+        asset_ref.get("requested_version") or asset_ref.get("version", "")
+    ).strip()
+    tag = str(asset_ref.get("requested_tag", "")).strip()
+    return _resolve_file(root, _ref_facets(asset_ref), version=version, tag=tag)
 
 
 def _metadata(root: GtstRoot, file_path: str) -> dict[str, Any]:
