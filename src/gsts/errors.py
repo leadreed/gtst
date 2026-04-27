@@ -9,6 +9,10 @@ class GstsConfigError(GstsError):
     """Raised when a GSTS config is missing or invalid."""
 
 
+class GstsRootError(GstsError):
+    """Raised when a GSTS root cannot be resolved."""
+
+
 class GstsPathError(GstsError):
     """Raised when a schema, facet, or filesystem path is invalid."""
 

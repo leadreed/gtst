@@ -7,6 +7,7 @@ from .errors import (
     GstsLockError,
     GstsPathError,
     GstsPublishError,
+    GstsRootError,
     GstsTagError,
     GstsVersionError,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "GstsPathError",
     "GstsPublishError",
     "GstsRoot",
+    "GstsRootError",
     "GstsTagError",
     "GstsVersionError",
 ]

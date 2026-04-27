@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import re
 import shutil
 from typing import Any
 
 from .config import CONFIG_FILENAME, GstsConfig
-from .errors import GstsConfigError, GstsPathError, GstsPublishError, GstsTagError, GstsVersionError
+from .errors import (
+    GstsConfigError,
+    GstsPathError,
+    GstsPublishError,
+    GstsRootError,
+    GstsTagError,
+    GstsVersionError,
+)
 from .locking import FileLock
 from .validation import validate_name
 
@@ -21,6 +29,15 @@ class GstsRoot:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path).expanduser().resolve()
         self.config = GstsConfig.load(self.path)
+
+    @classmethod
+    def from_env(cls) -> "GstsRoot":
+        root_path = os.environ.get("GSTS_ROOT")
+        if not root_path:
+            raise GstsRootError(
+                "GSTS_ROOT is not set. Run 'gsts init ROOT' and export GSTS_ROOT."
+            )
+        return cls(root_path)
 
     @classmethod
     def create(
