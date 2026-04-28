@@ -225,7 +225,8 @@ function ensureStyles() {
       background: #101216;
       box-sizing: border-box;
       display: flex;
-      flex: 1 1 auto;
+      flex: 0 0 var(--gtst-browser-preview-size, 140px);
+      height: var(--gtst-browser-preview-size, 140px);
       justify-content: center;
       min-height: 0;
       overflow: hidden;
@@ -301,7 +302,7 @@ function ensureStyles() {
 
     .gtst-browser-label {
       box-sizing: border-box;
-      flex: 0 0 58px;
+      flex: 0 0 auto;
       min-width: 0;
       overflow: hidden;
       padding: 5px 7px 6px;
@@ -835,6 +836,7 @@ function renderTileTags(item) {
 function renderTile(node, item) {
   const button = document.createElement("div");
   button.className = "gtst-browser-tile";
+  button.style.setProperty("--gtst-browser-preview-size", `${tileSize(node)}px`);
   button.dataset.path = item.file_path ?? "";
   button.dataset.selected = String(item.file_path === selectedPath(node));
   button.role = "button";
@@ -921,7 +923,7 @@ function renderGrid(node) {
   const size = tileSize(node);
   const scrollTop = state.items.scrollTop;
   state.items.style.gridTemplateColumns = `repeat(auto-fill, minmax(${size}px, 1fr))`;
-  state.items.style.gridAutoRows = `${size + 58}px`;
+  state.items.style.gridAutoRows = "auto";
   state.items.replaceChildren(
     ...state.payloadItems.map((item) => renderTile(node, item))
   );
