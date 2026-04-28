@@ -2,7 +2,7 @@ import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
 
 const STYLE_ID = "gtst-browser-style";
-const RESULT_LIMIT = 200;
+const RESULT_LIMIT = 1000;
 const DEFAULT_NODE_SIZE = [420, 520];
 const WIDGET_ROW_HEIGHT = 20;
 const TILE_FOOTER_HEIGHT = 45;

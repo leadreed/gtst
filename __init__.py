@@ -89,9 +89,9 @@ def _register_routes() -> None:
         query = request.rel_url.query
         mode = str(query.get("mode", "current"))
         try:
-            limit = int(str(query.get("limit", "200")))
+            limit = int(str(query.get("limit", "1000")))
         except ValueError:
-            limit = 200
+            limit = 1000
         try:
             schema_payload = schema_metadata_payload()
             values = {
