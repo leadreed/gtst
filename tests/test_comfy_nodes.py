@@ -357,6 +357,36 @@ def test_browser_all_versions_and_tag_filter(
     assert [item["file_path"] for item in tagged["items"]] == [first_path]
 
 
+def test_browser_filters_by_multiple_tags(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    asset_ref = make_ref(tmp_path, monkeypatch, tree="texts", asset="caption01")
+    first_path = SaveGtstText().save("first", asset_ref, "", False, "favorite")[
+        "result"
+    ][1]
+    second_path = SaveGtstText().save(
+        "second",
+        asset_ref,
+        "",
+        False,
+        "favorite, selected",
+    )["result"][1]
+    SaveGtstText().save("third", asset_ref, "", False, "selected")
+
+    values = {
+        "project": "project1",
+        "tree": "texts",
+        "asset": "caption01",
+        "tag": "favorite, selected",
+    }
+    all_versions = browser_results_payload("all versions", values)
+    latest = browser_results_payload("latest only", values)
+
+    assert first_path != second_path
+    assert [item["file_path"] for item in all_versions["items"]] == [second_path]
+    assert [item["file_path"] for item in latest["items"]] == [second_path]
+
+
 def test_browser_ready_tag_filter_only_returns_ready_version(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
@@ -385,6 +415,26 @@ def test_browser_ready_tag_filter_only_returns_ready_version(
     assert "ready" not in all_versions["items"][0]["tags"]
     assert all_versions["items"][1]["file_path"] == second_path
     assert "ready" in all_versions["items"][1]["tags"]
+
+
+def test_browser_multi_tag_filter_supports_ready(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    asset_ref = make_ref(tmp_path, monkeypatch, tree="texts", asset="caption01")
+    SaveGtstText().save("first", asset_ref, "", False, "favorite")
+    second_path = SaveGtstText().save("second", asset_ref, "", True, "favorite")[
+        "result"
+    ][1]
+
+    values = {
+        "project": "project1",
+        "tree": "texts",
+        "asset": "caption01",
+        "tag": "ready, favorite",
+    }
+    payload = browser_results_payload("all versions", values)
+
+    assert [item["file_path"] for item in payload["items"]] == [second_path]
 
 
 def test_browser_wildcards_text_preview_and_cap(

@@ -635,42 +635,48 @@ def _browser_item(root: GtstRoot, file_path: str) -> dict[str, Any]:
 def _browser_paths_for_facets(
     root: GtstRoot, facets: dict[str, str], mode: str, version: str, tag: str
 ) -> list[str]:
-    ready_tag = root.config.ready_tag_name
+    tag_filters = _split_tags(tag)
     if version:
         try:
             file_path = root.get_version(version=version, facets=facets)
         except GtstError:
             return []
-        if tag == ready_tag:
-            try:
-                return [file_path] if root.get_tagged_version(tag, facets=facets) == file_path else []
-            except GtstError:
-                return []
-        if tag and tag not in root.list_tags(version=version, facets=facets):
+        if tag_filters and not _file_matches_tags(root, file_path, tag_filters):
             return []
         return [file_path]
 
+    if tag_filters:
+        paths = [
+            root.get_version(version=asset_version, facets=facets)
+            for asset_version in root.list_versions(facets=facets)
+        ]
+        paths = [
+            file_path
+            for file_path in paths
+            if _file_matches_tags(root, file_path, tag_filters)
+        ]
+        if mode == "all versions":
+            return paths
+        return paths[-1:] if paths else []
+
     if mode == "all versions":
-        if tag == ready_tag:
-            try:
-                return [root.get_tagged_version(tag, facets=facets)]
-            except GtstError:
-                return []
         paths: list[str] = []
         for asset_version in root.list_versions(facets=facets):
-            if tag and tag not in root.list_tags(version=asset_version, facets=facets):
-                continue
             paths.append(root.get_version(version=asset_version, facets=facets))
         return paths
 
     try:
-        if tag:
-            return [root.get_latest_by_tag(tag, facets=facets)]
         if mode == "current":
             return [root.get_current(facets=facets)]
         return [root.get_latest(facets=facets)]
     except GtstError:
         return []
+
+
+def _file_matches_tags(root: GtstRoot, file_path: str, tags: list[str]) -> bool:
+    metadata = _metadata(root, file_path)
+    file_tags = set(metadata["tags"])
+    return all(tag in file_tags for tag in tags)
 
 
 def browser_results_payload(

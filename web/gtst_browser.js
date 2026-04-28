@@ -402,6 +402,25 @@ function browserValues(node) {
   );
 }
 
+function splitTagValue(value) {
+  return String(value ?? "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function joinTagValue(tags) {
+  return [...new Set(tags)].join(", ");
+}
+
+function toggleTagValue(value, tag) {
+  const tags = splitTagValue(value);
+  const next = tags.includes(tag)
+    ? tags.filter((candidate) => candidate !== tag)
+    : [...tags, tag];
+  return joinTagValue(next);
+}
+
 function selectedPath(node) {
   return widgetValue(node, "selected_file_path");
 }
@@ -634,7 +653,7 @@ function ensureOverlay(node) {
   tagSummary.className = "gtst-browser-tag-summary";
   const selectionStatus = document.createElement("span");
   selectionStatus.className = "gtst-browser-status-line";
-  status.append(resultStatus, tagSummary, selectionStatus);
+  status.append(resultStatus, selectionStatus, tagSummary);
 
   const items = document.createElement("div");
   items.className = "gtst-browser-items";
@@ -701,7 +720,7 @@ function updateTagSummary(node) {
     return;
   }
 
-  const currentTag = widgetValue(node, "tag");
+  const currentTags = splitTagValue(widgetValue(node, "tag"));
   const label = document.createElement("span");
   label.className = "gtst-browser-tag-summary-label";
   label.textContent = "Tags:";
@@ -712,12 +731,12 @@ function updateTagSummary(node) {
       const chip = document.createElement("button");
       chip.type = "button";
       chip.className = "gtst-browser-tag-summary-chip";
-      chip.dataset.active = String(tag === currentTag);
+      chip.dataset.active = String(currentTags.includes(tag));
       chip.textContent = `${tag} ${count}`;
       chip.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        setWidgetValue(node, "tag", tag === widgetValue(node, "tag") ? "" : tag);
+        setWidgetValue(node, "tag", toggleTagValue(widgetValue(node, "tag"), tag));
         refreshBrowser(node);
       });
       return chip;
@@ -834,12 +853,8 @@ function renderTile(node, item) {
   title.className = "gtst-browser-title";
   title.textContent = item.label ?? item.version ?? "GTST asset";
 
-  const subtitle = document.createElement("span");
-  subtitle.className = "gtst-browser-subtitle";
-  subtitle.textContent = item.subtitle ?? item.file_path ?? "";
-
   const tagRow = renderTileTags(item);
-  label.append(title, subtitle);
+  label.append(title);
   if (tagRow) {
     label.append(tagRow);
   }
