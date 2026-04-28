@@ -138,6 +138,51 @@ def _resolve_file(
     return root.get_current(facets=facets)
 
 
+def _file_signature(file_path: str | Path) -> dict[str, Any]:
+    path = Path(file_path)
+    stat = path.stat()
+    return {
+        "path": str(path.resolve()),
+        "mtime_ns": stat.st_mtime_ns,
+        "size": stat.st_size,
+    }
+
+
+def _missing_asset_signature(root: GtstRoot, facets: dict[str, str]) -> dict[str, Any]:
+    asset_dir = root.asset_dir(facets=facets)
+    if asset_dir.exists():
+        return _file_signature(asset_dir)
+    parent = asset_dir.parent
+    return _file_signature(parent if parent.exists() else root.path)
+
+
+def _resolution_kind(version: str, tag: str, file_path: str | None) -> str:
+    if file_path is not None:
+        return "file"
+    if version.strip():
+        return "version"
+    if tag.strip():
+        return "tag"
+    return "current"
+
+
+def _change_signature_for_ref(asset_ref: dict[str, Any]) -> str:
+    root = _ref_root(asset_ref)
+    facets = _ref_facets(asset_ref)
+    file_path = _ref_file_path(asset_ref)
+    return json.dumps(
+        {
+            "root_path": str(root.path),
+            "facets": facets,
+            "resolution": asset_ref.get("resolution", "file"),
+            "requested_version": str(asset_ref.get("requested_version", "")).strip(),
+            "requested_tag": str(asset_ref.get("requested_tag", "")).strip(),
+            "file": _file_signature(file_path),
+        },
+        sort_keys=True,
+    )
+
+
 def _facet_options() -> dict[str, list[str]]:
     fields = _input_schema()
     options = {field: [] for field in fields}
@@ -291,6 +336,7 @@ def _asset_ref(
         "version": metadata["version"],
         "requested_version": version.strip(),
         "requested_tag": tag.strip(),
+        "resolution": _resolution_kind(version, tag, file_path),
         "file_path": resolved,
         "metadata": metadata,
     }
@@ -309,13 +355,18 @@ def _ref_facets(asset_ref: dict[str, Any]) -> dict[str, str]:
 
 def _ref_file_path(asset_ref: dict[str, Any]) -> str:
     file_path = str(asset_ref.get("file_path", ""))
-    if file_path:
-        return file_path
     root = _ref_root(asset_ref)
     version = str(
         asset_ref.get("requested_version") or asset_ref.get("version", "")
     ).strip()
     tag = str(asset_ref.get("requested_tag", "")).strip()
+
+    if asset_ref.get("resolution") in {"current", "tag", "version"}:
+        version = str(asset_ref.get("requested_version", "")).strip()
+        return _resolve_file(root, _ref_facets(asset_ref), version=version, tag=tag)
+
+    if file_path:
+        return file_path
     return _resolve_file(root, _ref_facets(asset_ref), version=version, tag=tag)
 
 
@@ -328,8 +379,10 @@ def _metadata(root: GtstRoot, file_path: str) -> dict[str, Any]:
     except GtstTagError:
         ready_path = None
     is_ready = ready_path == file_path
-    if ready_path == file_path:
+    if is_ready:
         tags.add(root.config.ready_tag_name)
+    else:
+        tags.discard(root.config.ready_tag_name)
     return {
         "root_path": str(root.path),
         "asset_dir": root.asset_dir(facets=facets).as_posix(),
@@ -582,16 +635,27 @@ def _browser_item(root: GtstRoot, file_path: str) -> dict[str, Any]:
 def _browser_paths_for_facets(
     root: GtstRoot, facets: dict[str, str], mode: str, version: str, tag: str
 ) -> list[str]:
+    ready_tag = root.config.ready_tag_name
     if version:
         try:
             file_path = root.get_version(version=version, facets=facets)
         except GtstError:
             return []
+        if tag == ready_tag:
+            try:
+                return [file_path] if root.get_tagged_version(tag, facets=facets) == file_path else []
+            except GtstError:
+                return []
         if tag and tag not in root.list_tags(version=version, facets=facets):
             return []
         return [file_path]
 
     if mode == "all versions":
+        if tag == ready_tag:
+            try:
+                return [root.get_tagged_version(tag, facets=facets)]
+            except GtstError:
+                return []
         paths: list[str] = []
         for asset_version in root.list_versions(facets=facets):
             if tag and tag not in root.list_tags(version=asset_version, facets=facets):
@@ -812,6 +876,26 @@ class GtstAssetRef:
             }
         }
 
+    @classmethod
+    def IS_CHANGED(cls, version: str = "", tag: str = "", **kwargs: Any) -> str:
+        root = _root()
+        facets = _facets_from_kwargs(root, kwargs)
+        payload: dict[str, Any] = {
+            "root_path": str(root.path),
+            "facets": facets,
+            "resolution": _resolution_kind(version, tag, None),
+            "requested_version": version.strip(),
+            "requested_tag": tag.strip(),
+        }
+        try:
+            payload["file"] = _file_signature(
+                _resolve_file(root, facets, version=version, tag=tag)
+            )
+        except GtstError as exc:
+            payload["missing"] = _missing_asset_signature(root, facets)
+            payload["error"] = type(exc).__name__
+        return json.dumps(payload, sort_keys=True)
+
     def resolve(self, version: str = "", tag: str = "", **kwargs: Any) -> dict[str, Any]:
         root = _root()
         facets = _facets_from_kwargs(root, kwargs)
@@ -839,6 +923,10 @@ class LoadGtstImage:
                 "asset_ref": (ASSET_REF_TYPE, {"forceInput": True}),
             }
         }
+
+    @classmethod
+    def IS_CHANGED(cls, asset_ref: dict[str, Any]) -> str:
+        return _change_signature_for_ref(asset_ref)
 
     def load(self, asset_ref: dict[str, Any]) -> dict[str, Any]:
         root = _ref_root(asset_ref)
@@ -910,6 +998,10 @@ class LoadGtstText:
                 "asset_ref": (ASSET_REF_TYPE, {"forceInput": True}),
             }
         }
+
+    @classmethod
+    def IS_CHANGED(cls, asset_ref: dict[str, Any]) -> str:
+        return _change_signature_for_ref(asset_ref)
 
     def load(self, asset_ref: dict[str, Any]) -> tuple[str, str, str]:
         root = _ref_root(asset_ref)
@@ -984,6 +1076,10 @@ class LoadGtstVideo:
                 "asset_ref": (ASSET_REF_TYPE, {"forceInput": True}),
             }
         }
+
+    @classmethod
+    def IS_CHANGED(cls, asset_ref: dict[str, Any]) -> str:
+        return _change_signature_for_ref(asset_ref)
 
     def load(self, asset_ref: dict[str, Any]) -> dict[str, Any]:
         root = _ref_root(asset_ref)
@@ -1138,7 +1234,7 @@ class BrowseGtst:
                     {
                         "default": 140,
                         "min": 80,
-                        "max": 240,
+                        "max": 600,
                         "step": 1,
                         "display": "slider",
                         "tooltip": "Preview tile size in the browser grid.",

@@ -220,6 +220,51 @@ def test_text_nodes_asset_ref_tag_and_ready(
     assert "selected" in json.loads(tagged_ready_metadata)["tags"]
 
 
+def test_dynamic_asset_ref_re_resolves_when_ready_moves(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    asset_ref = make_ref(tmp_path, monkeypatch)
+    first = SaveGtstText().save("first prompt", asset_ref, "", False, "")["result"][1]
+    second_ref = SaveGtstText().save("second prompt", asset_ref, "", True, "")[
+        "result"
+    ][0]
+
+    current_ref = GtstAssetRef().resolve(
+        project="project1",
+        tree="prompts",
+        asset="heroPrompt",
+        variant="base",
+        subVariant="default",
+        version="",
+        tag="",
+    )["result"][0]
+    before = GtstAssetRef.IS_CHANGED(
+        project="project1",
+        tree="prompts",
+        asset="heroPrompt",
+        variant="base",
+        subVariant="default",
+        version="",
+        tag="",
+    )
+
+    MarkGtstReady().mark_ready(second_ref, "v001")
+    after = GtstAssetRef.IS_CHANGED(
+        project="project1",
+        tree="prompts",
+        asset="heroPrompt",
+        variant="base",
+        subVariant="default",
+        version="",
+        tag="",
+    )
+
+    text, loaded_path, _ = LoadGtstText().load(current_ref)
+    assert before != after
+    assert loaded_path == first
+    assert text == "first prompt"
+
+
 def test_video_nodes_publish_and_load_path(tmp_path: Path, monkeypatch: Any) -> None:
     asset_ref = make_ref(tmp_path, monkeypatch, tree="videos", asset="shot01")
     source = tmp_path / "clip.mp4"
@@ -310,6 +355,36 @@ def test_browser_all_versions_and_tag_filter(
 
     tagged = browser_results_payload("all versions", {**values, "tag": "selected"})
     assert [item["file_path"] for item in tagged["items"]] == [first_path]
+
+
+def test_browser_ready_tag_filter_only_returns_ready_version(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    asset_ref = make_ref(tmp_path, monkeypatch, tree="texts", asset="caption01")
+    first_path = SaveGtstText().save("first", asset_ref, "", False, "")["result"][1]
+    second_path = SaveGtstText().save("second", asset_ref, "", True, "")["result"][1]
+
+    values = {
+        "project": "project1",
+        "tree": "texts",
+        "asset": "caption01",
+        "tag": "ready",
+    }
+    ready = browser_results_payload("all versions", values)
+    all_versions = browser_results_payload(
+        "all versions",
+        {
+            "project": "project1",
+            "tree": "texts",
+            "asset": "caption01",
+        },
+    )
+
+    assert [item["file_path"] for item in ready["items"]] == [second_path]
+    assert all_versions["items"][0]["file_path"] == first_path
+    assert "ready" not in all_versions["items"][0]["tags"]
+    assert all_versions["items"][1]["file_path"] == second_path
+    assert "ready" in all_versions["items"][1]["tags"]
 
 
 def test_browser_wildcards_text_preview_and_cap(

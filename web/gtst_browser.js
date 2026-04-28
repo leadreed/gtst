@@ -348,7 +348,7 @@ function selectedPath(node) {
 
 function tileSize(node) {
   const value = Number(widgetValue(node, "preview_item_size"));
-  return Math.min(240, Math.max(80, Number.isFinite(value) ? value : 140));
+  return Math.min(600, Math.max(80, Number.isFinite(value) ? value : 140));
 }
 
 async function browserUrl(node) {

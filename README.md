@@ -346,7 +346,7 @@ Clicking a preview selects that exact version for the node output. If the
 filters change and the selected file is no longer visible, the selection is
 cleared. Text previews are truncated before display and clipped inside the
 tile. Video previews autoplay muted and unmute while hovered. The preview size
-slider controls grid tile size from 80 to 240 pixels.
+slider controls grid tile size from 80 to 600 pixels.
 
 Image load/save nodes use the Pillow, NumPy, and Torch libraries already present
 in a normal ComfyUI Python environment.
