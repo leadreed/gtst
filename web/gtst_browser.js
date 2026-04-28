@@ -12,6 +12,7 @@ let browserModes = ["current", "latest only", "all versions"];
 let schemaPromise = null;
 let animationStarted = false;
 let executionRefreshTimer = null;
+let activeActionMenu = null;
 
 function isBrowserNode(node) {
   return node?.comfyClass === "BrowseGTST" || node?.type === "BrowseGTST";
@@ -100,12 +101,82 @@ function ensureStyles() {
       min-width: 0;
       overflow: hidden;
       padding: 0;
+      position: relative;
       text-align: left;
+    }
+
+    .gtst-browser-tile:focus-visible {
+      outline: 2px solid #78a8ff;
+      outline-offset: -2px;
     }
 
     .gtst-browser-tile[data-selected="true"] {
       border-color: #78a8ff;
       box-shadow: inset 0 0 0 1px #78a8ff;
+    }
+
+    .gtst-browser-tile-menu-button {
+      align-items: center;
+      background: rgba(12, 15, 19, 0.86);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 4px;
+      color: #f4f7fb;
+      cursor: pointer;
+      display: inline-flex;
+      font: 15px/1 sans-serif;
+      height: 24px;
+      justify-content: center;
+      opacity: 0;
+      padding: 0;
+      position: absolute;
+      right: 6px;
+      top: 6px;
+      transition: opacity 120ms ease;
+      width: 24px;
+      z-index: 2;
+    }
+
+    .gtst-browser-tile:hover .gtst-browser-tile-menu-button,
+    .gtst-browser-tile-menu-button:focus-visible,
+    .gtst-browser-tile-menu-button[data-open="true"] {
+      opacity: 1;
+    }
+
+    .gtst-browser-action-menu {
+      background: var(--comfy-menu-bg, #222);
+      border: 1px solid var(--border-color, #666);
+      border-radius: 4px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
+      box-sizing: border-box;
+      color: var(--input-text, #ddd);
+      display: none;
+      font: 12px sans-serif;
+      min-width: 116px;
+      overflow: hidden;
+      position: fixed;
+      z-index: 10001;
+    }
+
+    .gtst-browser-action-menu button {
+      background: transparent;
+      border: 0;
+      color: inherit;
+      cursor: pointer;
+      display: block;
+      font: inherit;
+      padding: 6px 9px;
+      text-align: left;
+      width: 100%;
+    }
+
+    .gtst-browser-action-menu button:hover:not(:disabled) {
+      background: #4f6f8f;
+      color: #f2f7ff;
+    }
+
+    .gtst-browser-action-menu button:disabled {
+      color: #7e8792;
+      cursor: default;
     }
 
     .gtst-browser-preview {
@@ -285,6 +356,80 @@ function fileUrl(filePath) {
   return `/gtst/browser_file?path=${encodeURIComponent(filePath)}`;
 }
 
+function actionMenuElement() {
+  ensureStyles();
+  let menu = document.querySelector(".gtst-browser-action-menu");
+  if (!menu) {
+    menu = document.createElement("div");
+    menu.className = "gtst-browser-action-menu";
+    document.body.appendChild(menu);
+  }
+  return menu;
+}
+
+function hideActionMenu() {
+  if (activeActionMenu?.button) {
+    activeActionMenu.button.dataset.open = "false";
+  }
+  activeActionMenu = null;
+  actionMenuElement().style.display = "none";
+}
+
+async function postJson(url, body) {
+  const response = await api.fetchApi(url, {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
+  });
+  const payload = response.ok ? await response.json() : {};
+  if (!response.ok || payload.ok === false) {
+    throw new Error(payload.error || `GTST request failed: ${response.status}`);
+  }
+  return payload;
+}
+
+async function copyText(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  textarea.remove();
+}
+
+function showActionError(node, error) {
+  const message = error?.message ?? String(error);
+  console.error(message);
+  setResultStatus(node, message);
+}
+
+async function runTileAction(node, item, action) {
+  try {
+    if (action === "copy") {
+      await copyText(item.file_path);
+      setResultStatus(node, "Copied path");
+      return;
+    }
+    if (action === "set-ready") {
+      await postJson("/gtst/set_ready", { path: item.file_path });
+      await refreshBrowser(node);
+      return;
+    }
+    await postJson("/gtst/path_action", {
+      action,
+      path: item.file_path,
+    });
+  } catch (error) {
+    showActionError(node, error);
+  }
+}
+
 function hideWidget(widget) {
   if (!widget || widget.gtstHidden) {
     return;
@@ -429,10 +574,17 @@ function displayVersion(version) {
 }
 
 function renderTile(node, item) {
-  const button = document.createElement("button");
-  button.type = "button";
+  const button = document.createElement("div");
   button.className = "gtst-browser-tile";
   button.dataset.selected = String(item.file_path === selectedPath(node));
+  button.role = "button";
+  button.tabIndex = 0;
+
+  const menuButton = document.createElement("button");
+  menuButton.type = "button";
+  menuButton.className = "gtst-browser-tile-menu-button";
+  menuButton.title = "GTST actions";
+  menuButton.textContent = "⋯";
 
   const label = document.createElement("div");
   label.className = "gtst-browser-label";
@@ -446,13 +598,59 @@ function renderTile(node, item) {
   subtitle.textContent = item.subtitle ?? item.file_path ?? "";
 
   label.append(title, subtitle);
-  button.append(renderPreview(item), label);
+  button.append(renderPreview(item), menuButton, label);
   button.addEventListener("click", () => {
     const nextValue = item.file_path === selectedPath(node) ? "" : item.file_path;
     setWidgetValue(node, "selected_file_path", nextValue);
     renderGrid(node);
   });
+  button.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+    event.preventDefault();
+    button.click();
+  });
+  menuButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    showTileActionMenu(node, item, menuButton);
+  });
   return button;
+}
+
+function showTileActionMenu(node, item, anchor) {
+  const menu = actionMenuElement();
+  hideActionMenu();
+  activeActionMenu = { node, item, button: anchor };
+  anchor.dataset.open = "true";
+
+  const actions = [
+    ["Reveal", "reveal", false],
+    ["Open", "open", false],
+    ["Copy path", "copy", false],
+    [item.is_ready === true ? "Ready" : "Set ready", "set-ready", item.is_ready === true],
+  ];
+  menu.replaceChildren(
+    ...actions.map(([label, action, disabled]) => {
+      const itemButton = document.createElement("button");
+      itemButton.type = "button";
+      itemButton.textContent = label;
+      itemButton.disabled = disabled;
+      itemButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        hideActionMenu();
+        runTileAction(node, item, action);
+      });
+      return itemButton;
+    })
+  );
+
+  const rect = anchor.getBoundingClientRect();
+  menu.style.left = `${rect.right - 116}px`;
+  menu.style.top = `${rect.bottom + 4}px`;
+  menu.style.display = "block";
 }
 
 function renderGrid(node) {
@@ -541,6 +739,16 @@ function installExecutionRefresh() {
     if (remaining === 0) {
       scheduleRefreshAllBrowsers();
     }
+  });
+}
+
+function installActionMenuDismissal() {
+  document.addEventListener("pointerdown", (event) => {
+    const menu = actionMenuElement();
+    if (menu.contains(event.target) || activeActionMenu?.button?.contains(event.target)) {
+      return;
+    }
+    hideActionMenu();
   });
 }
 
@@ -639,6 +847,7 @@ app.registerExtension({
     loadSchema();
     startOverlayLoop();
     installExecutionRefresh();
+    installActionMenuDismissal();
   },
 
   async beforeRegisterNodeDef(nodeType, nodeData) {
