@@ -18,6 +18,7 @@ from comfy_nodes import (
     SaveGtstText,
     SaveGtstVideo,
     TagGtstVersion,
+    add_tag_payload,
     browser_results_payload,
     facet_suggestions_payload,
     path_action_payload,
@@ -427,6 +428,35 @@ def test_set_ready_payload_marks_browser_item_ready(
     current = browser_results_payload("current", {"project": "project1"})
     assert [item["file_path"] for item in current["items"]] == [first]
     assert current["items"][0]["file_path"] != second
+
+
+def test_add_tag_payload_tags_browser_item(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    asset_ref = make_ref(tmp_path, monkeypatch, tree="texts", asset="caption01")
+    saved = SaveGtstText().save("first", asset_ref, "", False, "")["result"][1]
+
+    payload = add_tag_payload(saved, "favorite")
+
+    assert payload["ok"] is True
+    assert payload["path"] == saved
+    assert payload["tag"] == "favorite"
+    assert "favorite" in payload["metadata"]["tags"]
+    tagged = browser_results_payload(
+        "all versions",
+        {"project": "project1", "tag": "favorite"},
+    )
+    assert [item["file_path"] for item in tagged["items"]] == [saved]
+
+
+def test_add_tag_payload_rejects_empty_tag(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    asset_ref = make_ref(tmp_path, monkeypatch, tree="texts", asset="caption01")
+    saved = SaveGtstText().save("first", asset_ref, "", False, "")["result"][1]
+
+    with pytest.raises(ValueError, match="tag cannot be empty"):
+        add_tag_payload(saved, " ")
 
 
 def test_facet_suggestions_are_hierarchy_aware(

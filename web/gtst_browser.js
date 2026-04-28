@@ -420,6 +420,12 @@ function showActionError(node, error) {
   setResultStatus(node, message);
 }
 
+function promptForTag(item) {
+  const label = item.label ? ` for ${item.label}` : "";
+  const tag = window.prompt(`Add GTST tag${label}`, "");
+  return tag == null ? null : tag.trim();
+}
+
 function positionNodeAtClient(node, clientX, clientY) {
   const point = clientToGraph(clientX, clientY);
   const size = node.size ?? node.computeSize?.() ?? [220, 120];
@@ -509,6 +515,15 @@ async function runTileAction(node, item, action, event) {
     }
     if (action === "set-ready") {
       await postJson("/gtst/set_ready", { path: item.file_path });
+      await refreshBrowser(node);
+      return;
+    }
+    if (action === "add-tag") {
+      const tag = promptForTag(item);
+      if (!tag) {
+        return;
+      }
+      await postJson("/gtst/add_tag", { path: item.file_path, tag });
       await refreshBrowser(node);
       return;
     }
@@ -722,6 +737,7 @@ function showTileActionMenu(node, item, anchor) {
     ["Open", "open", false],
     ["Copy path", "copy", false],
     ["Create Asset Ref", "create-asset-ref", false],
+    ["Add tag", "add-tag", false],
     [item.is_ready === true ? "Ready" : "Set ready", "set-ready", item.is_ready === true],
   ];
   menu.replaceChildren(

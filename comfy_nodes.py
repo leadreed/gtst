@@ -504,6 +504,26 @@ def set_ready_payload(file_path: str) -> dict[str, Any]:
     }
 
 
+def add_tag_payload(file_path: str, tag: str) -> dict[str, Any]:
+    tag = tag.strip()
+    if not tag:
+        raise ValueError("GTST tag cannot be empty.")
+    root = _root()
+    path = _path_inside_root(root, file_path)
+    if not path.is_file():
+        raise ValueError(f"GTST tag target is not a file: {path}")
+    facets = root.facets_from_path(path)
+    version = root.version_from_path(path)
+    root.tag_version(tag, version=version, facets=facets)
+    refreshed = root.get_version(version=version, facets=facets)
+    return {
+        "ok": True,
+        "path": refreshed,
+        "tag": tag,
+        "metadata": _metadata(root, refreshed),
+    }
+
+
 def _media_type(file_path: str | Path) -> str:
     extension = Path(file_path).suffix.lower()
     if extension in IMAGE_EXTENSIONS:

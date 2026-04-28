@@ -16,6 +16,7 @@ try:
     from .comfy_nodes import (
         NODE_CLASS_MAPPINGS,
         NODE_DISPLAY_NAME_MAPPINGS,
+        add_tag_payload,
         browser_results_payload,
         facet_suggestions_payload,
         path_action_payload,
@@ -27,6 +28,7 @@ except ImportError:
     from comfy_nodes import (
         NODE_CLASS_MAPPINGS,
         NODE_DISPLAY_NAME_MAPPINGS,
+        add_tag_payload,
         browser_results_payload,
         facet_suggestions_payload,
         path_action_payload,
@@ -153,6 +155,18 @@ def _register_routes() -> None:
         try:
             body = await request.json()
             payload = set_ready_payload(str(body.get("path", "")))
+        except Exception as exc:
+            payload = {"ok": False, "error": str(exc)}
+        return web.json_response(payload)
+
+    @PromptServer.instance.routes.post("/gtst/add_tag")
+    async def gtst_add_tag(request):  # type: ignore[no-untyped-def]
+        try:
+            body = await request.json()
+            payload = add_tag_payload(
+                str(body.get("path", "")),
+                str(body.get("tag", "")),
+            )
         except Exception as exc:
             payload = {"ok": False, "error": str(exc)}
         return web.json_response(payload)
