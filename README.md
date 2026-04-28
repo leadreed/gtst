@@ -307,9 +307,10 @@ Available nodes:
   as a normal output for downstream text preview/debug nodes.
 - `Load GTST Video`: resolve a GTST video asset and output the video file path,
   with a video preview.
-- `Save GTST Video`: publish an existing video file path as a new GTST version.
-  If `file_name` is empty, the configured default filename facet is used with
-  the source video's extension. This is an output node and shows a video
+- `Save GTST Video`: save a ComfyUI `VIDEO` as a new GTST version, using
+  `format` and `codec` controls like ComfyUI's built-in Save Video node. If
+  `file_name` is empty, the configured default filename facet is used with the
+  selected video format's extension. This is an output node and shows a video
   preview.
 - `Mark GTST Ready`: mark a specific version as the ready version for an asset.
   This is an output node.
