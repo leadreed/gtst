@@ -78,6 +78,47 @@ function ensureStyles() {
       margin-top: 2px;
     }
 
+    .gtst-browser-tag-summary {
+      align-items: center;
+      display: none;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 4px;
+      overflow: hidden;
+    }
+
+    .gtst-browser-tag-summary-label {
+      color: #aeb7c2;
+      flex: 0 0 auto;
+    }
+
+    .gtst-browser-tag-summary-chip,
+    .gtst-browser-tag-chip {
+      align-items: center;
+      background: rgba(120, 168, 255, 0.12);
+      border: 1px solid rgba(120, 168, 255, 0.26);
+      border-radius: 4px;
+      box-sizing: border-box;
+      color: #cbd9ee;
+      display: inline-flex;
+      font: inherit;
+      line-height: 1;
+      max-width: 100%;
+      min-width: 0;
+    }
+
+    .gtst-browser-tag-summary-chip {
+      cursor: pointer;
+      padding: 3px 6px;
+    }
+
+    .gtst-browser-tag-summary-chip:hover,
+    .gtst-browser-tag-summary-chip[data-active="true"] {
+      background: rgba(120, 168, 255, 0.28);
+      border-color: rgba(120, 168, 255, 0.72);
+      color: #f2f7ff;
+    }
+
     .gtst-browser-items {
       align-content: start;
       box-sizing: border-box;
@@ -260,7 +301,7 @@ function ensureStyles() {
 
     .gtst-browser-label {
       box-sizing: border-box;
-      flex: 0 0 38px;
+      flex: 0 0 58px;
       min-width: 0;
       overflow: hidden;
       padding: 5px 7px 6px;
@@ -282,6 +323,25 @@ function ensureStyles() {
       color: #9aa7b5;
       font-size: 11px;
       margin-top: 2px;
+    }
+
+    .gtst-browser-tags {
+      display: flex;
+      gap: 4px;
+      margin-top: 5px;
+      overflow: hidden;
+      white-space: nowrap;
+      width: 100%;
+    }
+
+    .gtst-browser-tag-chip {
+      flex: 0 0 auto;
+      font-size: 10px;
+      max-width: 92px;
+      overflow: hidden;
+      padding: 2px 5px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
   `;
   document.head.appendChild(style);
@@ -570,9 +630,11 @@ function ensureOverlay(node) {
   status.className = "gtst-browser-status";
   const resultStatus = document.createElement("span");
   resultStatus.className = "gtst-browser-status-line";
+  const tagSummary = document.createElement("div");
+  tagSummary.className = "gtst-browser-tag-summary";
   const selectionStatus = document.createElement("span");
   selectionStatus.className = "gtst-browser-status-line";
-  status.append(resultStatus, selectionStatus);
+  status.append(resultStatus, tagSummary, selectionStatus);
 
   const items = document.createElement("div");
   items.className = "gtst-browser-items";
@@ -585,6 +647,7 @@ function ensureOverlay(node) {
     items,
     resultStatus,
     selectionStatus,
+    tagSummary,
     status,
     payloadItems: [],
     requestId: 0,
@@ -609,6 +672,58 @@ function updateSelectionStatus(node) {
   const state = ensureOverlay(node);
   const item = selectedItem(node);
   state.selectionStatus.textContent = item?.label ? `Selected: ${item.label}` : "No selection";
+}
+
+function sortedTagCounts(items) {
+  const counts = new Map();
+  for (const item of items) {
+    for (const tag of new Set(item.tags ?? [])) {
+      counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()].sort(([left], [right]) => {
+    if (left === "ready") {
+      return -1;
+    }
+    if (right === "ready") {
+      return 1;
+    }
+    return String(left).localeCompare(String(right));
+  });
+}
+
+function updateTagSummary(node) {
+  const state = ensureOverlay(node);
+  const tagCounts = sortedTagCounts(state.payloadItems);
+  state.tagSummary.replaceChildren();
+  if (!tagCounts.length) {
+    state.tagSummary.style.display = "none";
+    return;
+  }
+
+  const currentTag = widgetValue(node, "tag");
+  const label = document.createElement("span");
+  label.className = "gtst-browser-tag-summary-label";
+  label.textContent = "Tags:";
+
+  state.tagSummary.append(
+    label,
+    ...tagCounts.map(([tag, count]) => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "gtst-browser-tag-summary-chip";
+      chip.dataset.active = String(tag === currentTag);
+      chip.textContent = `${tag} ${count}`;
+      chip.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setWidgetValue(node, "tag", tag === widgetValue(node, "tag") ? "" : tag);
+        refreshBrowser(node);
+      });
+      return chip;
+    })
+  );
+  state.tagSummary.style.display = "flex";
 }
 
 function renderPreview(item) {
@@ -679,6 +794,25 @@ function displayVersion(version) {
   return String(version ?? "").replace(/^v0*(\d+)$/, "v$1");
 }
 
+function renderTileTags(item) {
+  const tags = item.tags ?? [];
+  if (!tags.length) {
+    return null;
+  }
+
+  const row = document.createElement("div");
+  row.className = "gtst-browser-tags";
+  row.append(
+    ...tags.map((tag) => {
+      const chip = document.createElement("span");
+      chip.className = "gtst-browser-tag-chip";
+      chip.textContent = tag;
+      return chip;
+    })
+  );
+  return row;
+}
+
 function renderTile(node, item) {
   const button = document.createElement("div");
   button.className = "gtst-browser-tile";
@@ -704,7 +838,11 @@ function renderTile(node, item) {
   subtitle.className = "gtst-browser-subtitle";
   subtitle.textContent = item.subtitle ?? item.file_path ?? "";
 
+  const tagRow = renderTileTags(item);
   label.append(title, subtitle);
+  if (tagRow) {
+    label.append(tagRow);
+  }
   button.append(renderPreview(item), menuButton, label);
   button.addEventListener("click", () => {
     const nextValue = item.file_path === selectedPath(node) ? "" : item.file_path;
@@ -768,11 +906,12 @@ function renderGrid(node) {
   const size = tileSize(node);
   const scrollTop = state.items.scrollTop;
   state.items.style.gridTemplateColumns = `repeat(auto-fill, minmax(${size}px, 1fr))`;
-  state.items.style.gridAutoRows = `${size + 38}px`;
+  state.items.style.gridAutoRows = `${size + 58}px`;
   state.items.replaceChildren(
     ...state.payloadItems.map((item) => renderTile(node, item))
   );
   state.items.scrollTop = scrollTop;
+  updateTagSummary(node);
   updateSelectionStatus(node);
 }
 
