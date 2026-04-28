@@ -667,6 +667,7 @@ function displayVersion(version) {
 function renderTile(node, item) {
   const button = document.createElement("div");
   button.className = "gtst-browser-tile";
+  button.dataset.path = item.file_path ?? "";
   button.dataset.selected = String(item.file_path === selectedPath(node));
   button.role = "button";
   button.tabIndex = 0;
@@ -693,7 +694,7 @@ function renderTile(node, item) {
   button.addEventListener("click", () => {
     const nextValue = item.file_path === selectedPath(node) ? "" : item.file_path;
     setWidgetValue(node, "selected_file_path", nextValue);
-    renderGrid(node);
+    updateGridSelection(node);
   });
   button.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" && event.key !== " ") {
@@ -749,11 +750,22 @@ function renderGrid(node) {
   hideActionMenu();
   const state = ensureOverlay(node);
   const size = tileSize(node);
+  const scrollTop = state.items.scrollTop;
   state.items.style.gridTemplateColumns = `repeat(auto-fill, minmax(${size}px, 1fr))`;
   state.items.style.gridAutoRows = `${size + 38}px`;
   state.items.replaceChildren(
     ...state.payloadItems.map((item) => renderTile(node, item))
   );
+  state.items.scrollTop = scrollTop;
+  updateSelectionStatus(node);
+}
+
+function updateGridSelection(node) {
+  const state = ensureOverlay(node);
+  const selected = selectedPath(node);
+  for (const tile of state.items.querySelectorAll(".gtst-browser-tile")) {
+    tile.dataset.selected = String(tile.dataset.path === selected);
+  }
   updateSelectionStatus(node);
 }
 
