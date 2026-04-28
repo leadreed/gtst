@@ -18,7 +18,10 @@ try:
         NODE_DISPLAY_NAME_MAPPINGS,
         browser_results_payload,
         facet_suggestions_payload,
+        path_action_payload,
+        resolve_path_action_payload,
         schema_metadata_payload,
+        set_ready_payload,
     )
 except ImportError:
     from comfy_nodes import (
@@ -26,7 +29,10 @@ except ImportError:
         NODE_DISPLAY_NAME_MAPPINGS,
         browser_results_payload,
         facet_suggestions_payload,
+        path_action_payload,
+        resolve_path_action_payload,
         schema_metadata_payload,
+        set_ready_payload,
     )
 
 
@@ -116,6 +122,40 @@ def _register_routes() -> None:
         if not path.is_file():
             raise web.HTTPNotFound()
         return web.FileResponse(path)
+
+    @PromptServer.instance.routes.post("/gtst/path_action")
+    async def gtst_path_action(request):  # type: ignore[no-untyped-def]
+        try:
+            body = await request.json()
+            payload = path_action_payload(
+                str(body.get("action", "")),
+                str(body.get("path", "")),
+            )
+        except Exception as exc:
+            payload = {"ok": False, "error": str(exc)}
+        return web.json_response(payload)
+
+    @PromptServer.instance.routes.post("/gtst/resolve_path_action")
+    async def gtst_resolve_path_action(request):  # type: ignore[no-untyped-def]
+        try:
+            body = await request.json()
+            values = {
+                str(key): str(value)
+                for key, value in dict(body.get("values", {})).items()
+            }
+            payload = resolve_path_action_payload(str(body.get("action", "")), values)
+        except Exception as exc:
+            payload = {"ok": False, "error": str(exc)}
+        return web.json_response(payload)
+
+    @PromptServer.instance.routes.post("/gtst/set_ready")
+    async def gtst_set_ready(request):  # type: ignore[no-untyped-def]
+        try:
+            body = await request.json()
+            payload = set_ready_payload(str(body.get("path", "")))
+        except Exception as exc:
+            payload = {"ok": False, "error": str(exc)}
+        return web.json_response(payload)
 
 
 _register_routes()

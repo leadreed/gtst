@@ -20,8 +20,11 @@ from comfy_nodes import (
     TagGtstVersion,
     browser_results_payload,
     facet_suggestions_payload,
+    path_action_payload,
+    resolve_path_action_payload,
     schema_metadata_payload,
     selected_browser_asset,
+    set_ready_payload,
 )
 from gtst import GtstRoot
 
@@ -363,6 +366,67 @@ def test_browser_selection_requires_file(tmp_path: Path, monkeypatch: Any) -> No
         assert "No GTST browser preview selected" in str(exc)
     else:
         raise AssertionError("expected missing browser selection to fail")
+
+
+def test_resolve_path_action_reveals_deepest_existing_facet_path(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    asset_ref = make_ref(tmp_path, monkeypatch, tree="texts", asset="caption01")
+    saved = SaveGtstText().save("caption", asset_ref, "", False, "")["result"][1]
+    opened: list[tuple[str, Path]] = []
+
+    monkeypatch.setattr(
+        "comfy_nodes._os_action_path",
+        lambda action, path: opened.append((action, Path(path))),
+    )
+
+    partial = resolve_path_action_payload(
+        "reveal",
+        {"project": "project1", "tree": "texts", "asset": "missing"},
+    )
+    assert partial["path"].endswith("/project1/texts")
+    assert opened[-1] == ("reveal", Path(partial["path"]))
+
+    exact = resolve_path_action_payload(
+        "reveal",
+        {
+            "project": "project1",
+            "tree": "texts",
+            "asset": "caption01",
+            "variant": "base",
+            "subVariant": "default",
+        },
+    )
+    assert exact["path"] == saved
+    assert opened[-1] == ("reveal", Path(saved))
+
+
+def test_path_action_is_scoped_to_gtst_root(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    monkeypatch.setenv("GTST_ROOT", str(tmp_path / "root"))
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="inside GTST_ROOT"):
+        path_action_payload("open", str(outside))
+
+
+def test_set_ready_payload_marks_browser_item_ready(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    asset_ref = make_ref(tmp_path, monkeypatch, tree="texts", asset="caption01")
+    first = SaveGtstText().save("first", asset_ref, "", False, "")["result"][1]
+    second = SaveGtstText().save("second", asset_ref, "", True, "")["result"][1]
+
+    payload = set_ready_payload(first)
+
+    assert payload["ok"] is True
+    assert payload["path"] == first
+    assert payload["metadata"]["is_ready"] is True
+    current = browser_results_payload("current", {"project": "project1"})
+    assert [item["file_path"] for item in current["items"]] == [first]
+    assert current["items"][0]["file_path"] != second
 
 
 def test_facet_suggestions_are_hierarchy_aware(

@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import platform
 from pathlib import Path
 import shutil
+import subprocess
 import tempfile
 from typing import Any
 import uuid
@@ -393,6 +395,113 @@ def _path_inside_root(root: GtstRoot, file_path: str | Path) -> Path:
     if root.path not in [resolved, *resolved.parents]:
         raise ValueError(f"Path is not inside GTST_ROOT: {resolved}")
     return resolved
+
+
+def _deepest_existing_facet_path(
+    root: GtstRoot, values: dict[str, str] | None = None
+) -> Path:
+    path = root.path
+    for schema_field in root.config.schema:
+        value = str((values or {}).get(schema_field, "")).strip()
+        if not value:
+            break
+        candidate = path / value
+        if not candidate.exists():
+            break
+        path = candidate
+    return path
+
+
+def _resolved_browser_target(values: dict[str, str] | None = None) -> Path:
+    root = _root()
+    facets = _browser_filter_facets(root, values)
+    path = _deepest_existing_facet_path(root, values)
+    version = str((values or {}).get("version", "")).strip()
+    tag = str((values or {}).get("tag", "")).strip()
+
+    if len(facets) != len(root.config.schema):
+        return path
+
+    if version or tag:
+        return Path(_resolve_file(root, facets, version=version, tag=tag)).resolve()
+
+    try:
+        return Path(root.get_current(facets=facets)).resolve()
+    except GtstError:
+        return root.asset_dir(facets=facets).resolve()
+
+
+def _os_action_path(action: str, path: str | Path) -> None:
+    resolved = Path(path).expanduser().resolve()
+    system = platform.system()
+
+    if action == "reveal":
+        if system == "Darwin":
+            subprocess.run(["open", "-R", str(resolved)], check=False)
+            return
+        if system == "Windows":
+            if resolved.is_file():
+                subprocess.run(["explorer", f"/select,{resolved}"], check=False)
+            else:
+                subprocess.run(["explorer", str(resolved)], check=False)
+            return
+        if resolved.is_file():
+            subprocess.run(["xdg-open", str(resolved.parent)], check=False)
+        else:
+            subprocess.run(["xdg-open", str(resolved)], check=False)
+        return
+
+    if action == "open":
+        if system == "Darwin":
+            subprocess.run(["open", str(resolved)], check=False)
+            return
+        if system == "Windows":
+            os.startfile(str(resolved))  # type: ignore[attr-defined]
+            return
+        subprocess.run(["xdg-open", str(resolved)], check=False)
+        return
+
+    raise ValueError(f"Unsupported GTST path action: {action}")
+
+
+def path_action_payload(action: str, file_path: str) -> dict[str, Any]:
+    if action not in {"reveal", "open"}:
+        raise ValueError(f"Unsupported GTST path action: {action}")
+    root = _root()
+    path = _path_inside_root(root, file_path)
+    if not path.exists():
+        raise ValueError(f"GTST path does not exist: {path}")
+    _os_action_path(action, path)
+    return {"ok": True, "action": action, "path": str(path)}
+
+
+def resolve_path_action_payload(
+    action: str, values: dict[str, str] | None = None
+) -> dict[str, Any]:
+    if action not in {"reveal", "open"}:
+        raise ValueError(f"Unsupported GTST path action: {action}")
+    root = _root()
+    path = _path_inside_root(root, _resolved_browser_target(values))
+    if not path.exists():
+        raise ValueError(f"GTST path does not exist: {path}")
+    _os_action_path(action, path)
+    return {"ok": True, "action": action, "path": str(path)}
+
+
+def set_ready_payload(file_path: str) -> dict[str, Any]:
+    root = _root()
+    path = _path_inside_root(root, file_path)
+    if not path.is_file():
+        raise ValueError(f"GTST ready target is not a file: {path}")
+    facets = root.facets_from_path(path)
+    version = root.version_from_path(path)
+    root.tag_version(root.config.ready_tag_name, version=version, facets=facets)
+    refreshed = root.get_version(version=version, facets=facets)
+    return {
+        "ok": True,
+        "path": refreshed,
+        "metadata": _metadata(root, refreshed),
+    }
 
 
 def _media_type(file_path: str | Path) -> str:
