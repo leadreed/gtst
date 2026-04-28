@@ -774,13 +774,26 @@ function installExecutionRefresh() {
 }
 
 function installActionMenuDismissal() {
-  document.addEventListener("pointerdown", (event) => {
+  const dismissOnOutsidePress = (event) => {
+    if (!activeActionMenu) {
+      return;
+    }
     const menu = actionMenuElement();
-    if (menu.contains(event.target) || activeActionMenu?.button?.contains(event.target)) {
+    const path = event.composedPath?.() ?? [];
+    if (
+      path.includes(menu) ||
+      path.includes(activeActionMenu.button) ||
+      menu.contains(event.target) ||
+      activeActionMenu.button?.contains(event.target)
+    ) {
       return;
     }
     hideActionMenu();
-  });
+  };
+
+  document.addEventListener("pointerdown", dismissOnOutsidePress, true);
+  document.addEventListener("mousedown", dismissOnOutsidePress, true);
+  document.addEventListener("contextmenu", dismissOnOutsidePress, true);
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
