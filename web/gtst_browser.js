@@ -41,11 +41,7 @@ async function loadSchema() {
 }
 
 function ensureStyles() {
-  if (document.getElementById(STYLE_ID)) {
-    return;
-  }
-
-  const style = document.createElement("style");
+  const style = document.getElementById(STYLE_ID) ?? document.createElement("style");
   style.id = STYLE_ID;
   style.textContent = `
     .gtst-browser-grid {
@@ -350,7 +346,9 @@ function ensureStyles() {
       white-space: nowrap;
     }
   `;
-  document.head.appendChild(style);
+  if (!style.parentElement) {
+    document.head.appendChild(style);
+  }
 }
 
 function graphToClient(x, y) {
@@ -767,6 +765,10 @@ function updateTagSummary(node) {
 function renderPreview(item) {
   const preview = document.createElement("div");
   preview.className = "gtst-browser-preview";
+  preview.style.aspectRatio = "16 / 9";
+  preview.style.flex = "0 0 auto";
+  preview.style.height = "auto";
+  preview.style.minHeight = "var(--gtst-browser-preview-size, 140px)";
   preview.append(renderVersionBadge(item));
 
   if (item.media_type === "image") {
