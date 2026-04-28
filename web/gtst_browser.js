@@ -5,7 +5,6 @@ const STYLE_ID = "gtst-browser-style";
 const RESULT_LIMIT = 200;
 const DEFAULT_NODE_SIZE = [420, 520];
 const WIDGET_ROW_HEIGHT = 20;
-const CREATED_NODE_OFFSET = [460, 0];
 
 const browserNodes = new Set();
 let suggestionWidgets = ["version", "tag"];
@@ -300,6 +299,17 @@ function graphToClient(x, y) {
   };
 }
 
+function clientToGraph(clientX, clientY) {
+  const canvas = app.canvas;
+  const rect = canvas.canvas.getBoundingClientRect();
+  const scale = canvas.ds?.scale ?? 1;
+  const offset = canvas.ds?.offset ?? [0, 0];
+  return {
+    x: (clientX - rect.left) / scale - offset[0],
+    y: (clientY - rect.top) / scale - offset[1],
+  };
+}
+
 function widgetValue(node, name) {
   return String(node.widgets?.find((widget) => widget.name === name)?.value ?? "");
 }
@@ -410,16 +420,67 @@ function showActionError(node, error) {
   setResultStatus(node, message);
 }
 
-function createAssetRefNode(browserNode, item) {
+function positionNodeAtClient(node, clientX, clientY) {
+  const point = clientToGraph(clientX, clientY);
+  const size = node.size ?? node.computeSize?.() ?? [220, 120];
+  node.pos = [point.x - size[0] / 2, point.y - 12];
+  node.setDirtyCanvas?.(true, true);
+  app.graph.setDirtyCanvas?.(true, true);
+}
+
+function positionNodeAtGraphMouse(node) {
+  const graphMouse = app.canvas?.graph_mouse;
+  if (!Array.isArray(graphMouse)) {
+    return;
+  }
+  const size = node.size ?? node.computeSize?.() ?? [220, 120];
+  node.pos = [graphMouse[0] - size[0] / 2, graphMouse[1] - 12];
+}
+
+function startAssetRefPlacement(browserNode, node, event) {
+  setResultStatus(browserNode, "Click to place Asset Ref");
+  if (Number.isFinite(event?.clientX) && Number.isFinite(event?.clientY)) {
+    positionNodeAtClient(node, event.clientX, event.clientY);
+  } else {
+    positionNodeAtGraphMouse(node);
+  }
+
+  const move = (moveEvent) => {
+    positionNodeAtClient(node, moveEvent.clientX, moveEvent.clientY);
+  };
+  const finish = (clickEvent) => {
+    clickEvent.preventDefault();
+    clickEvent.stopPropagation();
+    positionNodeAtClient(node, clickEvent.clientX, clickEvent.clientY);
+    cleanup();
+    setResultStatus(browserNode, "Asset Ref created");
+  };
+  const cancel = (keyEvent) => {
+    if (keyEvent.key !== "Escape") {
+      return;
+    }
+    app.graph.remove?.(node);
+    cleanup();
+    setResultStatus(browserNode, "Asset Ref creation canceled");
+  };
+  const cleanup = () => {
+    document.removeEventListener("pointermove", move, true);
+    document.removeEventListener("pointerdown", finish, true);
+    document.removeEventListener("keydown", cancel, true);
+  };
+
+  window.setTimeout(() => {
+    document.addEventListener("pointermove", move, true);
+    document.addEventListener("pointerdown", finish, true);
+    document.addEventListener("keydown", cancel, true);
+  }, 0);
+}
+
+function createAssetRefNode(browserNode, item, event) {
   const created = LiteGraph.createNode("GTSTAssetRef");
   if (!created) {
     throw new Error("Could not create GTST Asset Ref node.");
   }
-
-  created.pos = [
-    browserNode.pos[0] + CREATED_NODE_OFFSET[0],
-    browserNode.pos[1] + CREATED_NODE_OFFSET[1],
-  ];
   app.graph.add(created);
 
   for (const [name, value] of Object.entries(item.facets ?? {})) {
@@ -431,13 +492,14 @@ function createAssetRefNode(browserNode, item) {
   app.canvas.selectNode?.(created);
   created.setDirtyCanvas?.(true, true);
   app.graph.setDirtyCanvas?.(true, true);
+  startAssetRefPlacement(browserNode, created, event);
   return created;
 }
 
-async function runTileAction(node, item, action) {
+async function runTileAction(node, item, action, event) {
   try {
     if (action === "create-asset-ref") {
-      createAssetRefNode(node, item);
+      createAssetRefNode(node, item, event);
       return;
     }
     if (action === "copy") {
@@ -671,7 +733,7 @@ function showTileActionMenu(node, item, anchor) {
         event.preventDefault();
         event.stopPropagation();
         hideActionMenu();
-        runTileAction(node, item, action);
+        runTileAction(node, item, action, event);
       });
       return itemButton;
     })
