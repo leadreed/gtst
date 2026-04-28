@@ -27,6 +27,8 @@ BROWSER_RESULT_LIMIT = 1000
 TEXT_PREVIEW_LIMIT = 500
 IMAGE_EXTENSIONS = {".apng", ".avif", ".bmp", ".gif", ".jpeg", ".jpg", ".png", ".webp"}
 VIDEO_EXTENSIONS = {".m4v", ".mov", ".mp4", ".ogg", ".ogv", ".webm"}
+DEFAULT_VIDEO_FORMATS = ("auto", "mp4")
+DEFAULT_VIDEO_CODECS = ("auto", "h264")
 TEXT_EXTENSIONS = {
     ".cfg",
     ".csv",
@@ -787,6 +789,72 @@ def _publish_existing_file(
     return published
 
 
+def _video_container_type() -> Any | None:
+    try:
+        from comfy_api.latest import Types
+    except ImportError:
+        return None
+    return Types.VideoContainer
+
+
+def _video_codec_type() -> Any | None:
+    try:
+        from comfy_api.latest import Types
+    except ImportError:
+        return None
+    return Types.VideoCodec
+
+
+def _video_format_options() -> list[str]:
+    video_container = _video_container_type()
+    if video_container is None:
+        return list(DEFAULT_VIDEO_FORMATS)
+    return list(video_container.as_input())
+
+
+def _video_codec_options() -> list[str]:
+    video_codec = _video_codec_type()
+    if video_codec is None:
+        return list(DEFAULT_VIDEO_CODECS)
+    return list(video_codec.as_input())
+
+
+def _video_format_value(format_name: str) -> Any:
+    video_container = _video_container_type()
+    if video_container is None:
+        return format_name
+    return video_container(format_name)
+
+
+def _video_extension(format_name: str) -> str:
+    video_container = _video_container_type()
+    if video_container is None:
+        return ".mp4" if format_name == "auto" else f".{format_name}"
+    extension = video_container.get_extension(format_name)
+    if not extension:
+        extension = DEFAULT_VIDEO_FORMATS[-1]
+    return f".{extension.lstrip('.')}"
+
+
+def _comfy_metadata(prompt: Any, extra_pnginfo: Any) -> dict[str, Any] | None:
+    try:
+        from comfy.cli_args import args
+    except ImportError:
+        disable_metadata = False
+    else:
+        disable_metadata = bool(args.disable_metadata)
+
+    if disable_metadata:
+        return None
+
+    metadata: dict[str, Any] = {}
+    if extra_pnginfo is not None:
+        metadata.update(extra_pnginfo)
+    if prompt is not None:
+        metadata["prompt"] = prompt
+    return metadata or None
+
+
 def _filename_with_extension(name: str, extension: str) -> str:
     if Path(name).suffix:
         return name
@@ -1128,7 +1196,7 @@ class LoadGtstVideo:
 
 
 class SaveGtstVideo:
-    """Save an existing video path into GTST."""
+    """Save a ComfyUI video into GTST."""
 
     CATEGORY = CATEGORY
     RETURN_TYPES = (ASSET_REF_TYPE, "STRING", "STRING")
@@ -1140,33 +1208,50 @@ class SaveGtstVideo:
     def INPUT_TYPES(cls) -> dict[str, dict[str, object]]:
         return {
             "required": {
-                "video_path": ("STRING", {"default": ""}),
+                "video": ("VIDEO",),
                 "asset_ref": (ASSET_REF_TYPE, {"forceInput": True}),
                 "file_name": ("STRING", {"default": ""}),
+                "format": (
+                    _video_format_options(),
+                    {"default": "auto"},
+                ),
+                "codec": (
+                    _video_codec_options(),
+                    {"default": "auto"},
+                ),
                 "mark_ready": ("BOOLEAN", {"default": False}),
                 "tags": (
                     "STRING",
                     {"default": "", "tooltip": "Comma or newline separated tags."},
                 ),
-            }
+            },
+            "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
         }
 
     def save(
         self,
-        video_path: str,
+        video: Any,
         asset_ref: dict[str, Any],
         file_name: str,
+        format: str,
+        codec: str,
         mark_ready: bool,
         tags: str,
+        prompt: Any = None,
+        extra_pnginfo: Any = None,
     ) -> dict[str, Any]:
         root = _ref_root(asset_ref)
         facets = _ref_facets(asset_ref)
-        source_video = Path(video_path)
-        extension = source_video.suffix or ".mp4"
+        extension = _video_extension(format)
         name = _default_filename(root, facets, file_name, extension)
         with tempfile.TemporaryDirectory() as temp_dir:
             source = Path(temp_dir) / name
-            shutil.copy2(source_video, source)
+            video.save_to(
+                str(source),
+                format=_video_format_value(format),
+                codec=codec,
+                metadata=_comfy_metadata(prompt, extra_pnginfo),
+            )
             published = _publish_existing_file(root, str(source), facets, mark_ready, tags)
         result = (
             _asset_ref(root, facets, file_path=published),

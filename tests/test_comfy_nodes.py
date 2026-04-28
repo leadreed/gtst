@@ -81,6 +81,28 @@ def make_ref(
     return asset_ref
 
 
+class FakeVideo:
+    def __init__(self, payload: bytes = b"fake video") -> None:
+        self.payload = payload
+        self.saved_path: str | None = None
+        self.saved_format: Any = None
+        self.saved_codec: str | None = None
+        self.saved_metadata: dict[str, Any] | None = None
+
+    def save_to(
+        self,
+        path: str,
+        format: Any,
+        codec: str,
+        metadata: dict[str, Any] | None,
+    ) -> None:
+        self.saved_path = path
+        self.saved_format = format
+        self.saved_codec = codec
+        self.saved_metadata = metadata
+        Path(path).write_bytes(self.payload)
+
+
 def test_asset_ref_resolve_has_no_preview_ui(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
@@ -265,23 +287,33 @@ def test_dynamic_asset_ref_re_resolves_when_ready_moves(
     assert text == "first prompt"
 
 
-def test_video_nodes_publish_and_load_path(tmp_path: Path, monkeypatch: Any) -> None:
+def test_video_nodes_publish_and_load_video(tmp_path: Path, monkeypatch: Any) -> None:
     asset_ref = make_ref(tmp_path, monkeypatch, tree="videos", asset="shot01")
-    source = tmp_path / "clip.mp4"
-    source.write_bytes(b"fake video")
+    video = FakeVideo()
+    prompt = {"1": {"class_type": "CreateVideo"}}
+    extra_pnginfo = {"workflow": {"nodes": []}}
 
     result = SaveGtstVideo().save(
-        str(source),
+        video,
         asset_ref,
         "",
+        "mp4",
+        "h264",
         True,
         "review",
+        prompt=prompt,
+        extra_pnginfo=extra_pnginfo,
     )
     published_ref, published, metadata = result["result"]
 
     assert published_ref["file_path"] == published
     assert result["ui"]["animated"] == (True,)
     assert result["ui"]["images"][0]["type"] == "temp"
+    assert video.saved_path is not None
+    assert video.saved_path.endswith("shot01.mp4")
+    assert video.saved_format == "mp4"
+    assert video.saved_codec == "h264"
+    assert video.saved_metadata == {"workflow": {"nodes": []}, "prompt": prompt}
     assert Path(published).read_bytes() == b"fake video"
     assert json.loads(metadata)["tags"] == ["ready", "review"]
     assert LoadGtstVideo().load(published_ref)["result"][0] == published
