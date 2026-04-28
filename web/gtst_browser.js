@@ -941,7 +941,7 @@ function renderGrid(node) {
   const size = tileSize(node);
   const scrollTop = state.items.scrollTop;
   state.items.style.gridTemplateColumns = `repeat(auto-fill, minmax(${size}px, 1fr))`;
-  state.items.style.gridAutoRows = `${size + 72}px`;
+  state.items.style.gridAutoRows = "auto";
   state.items.replaceChildren(
     ...state.payloadItems.map((item) => renderTile(node, item))
   );
