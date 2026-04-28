@@ -858,6 +858,17 @@ function renderTileTags(item) {
   return row;
 }
 
+function browserItemTooltip(item) {
+  const tags = item.tags?.length ? item.tags.join(", ") : "none";
+  return [
+    item.label ?? "GTST asset",
+    item.subtitle ?? "",
+    `Tags: ${tags}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 function renderTile(node, item) {
   const button = document.createElement("div");
   button.className = "gtst-browser-tile";
@@ -865,6 +876,7 @@ function renderTile(node, item) {
   button.style.setProperty("--gtst-browser-footer-size", `${TILE_FOOTER_HEIGHT}px`);
   button.dataset.path = item.file_path ?? "";
   button.dataset.selected = String(item.file_path === selectedPath(node));
+  button.title = browserItemTooltip(item);
   button.role = "button";
   button.tabIndex = 0;
 
