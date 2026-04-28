@@ -422,8 +422,35 @@ def test_browser_filters_by_multiple_tags_using_and(
 
     assert first_path != second_path
     assert [item["file_path"] for item in all_versions["items"]] == [second_path]
-    assert [item["file_path"] for item in latest["items"]] == [second_path]
+    assert [item["file_path"] for item in latest["items"]] == []
     assert all_versions["tag_filter_mode"] == "AND"
+
+
+def test_browser_tag_filter_narrows_latest_only_mode(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    asset_ref = make_ref(tmp_path, monkeypatch, tree="texts", asset="caption01")
+    first_ref, first_path, _, _ = SaveGtstText().save(
+        "first",
+        asset_ref,
+        "",
+        False,
+        "",
+    )["result"]
+    SaveGtstText().save("second", asset_ref, "", False, "")
+    MarkGtstReady().mark_ready(first_ref, "v001")
+
+    values = {
+        "project": "project1",
+        "tree": "texts",
+        "asset": "caption01",
+        "tag": "ready",
+    }
+    all_versions = browser_results_payload("all versions", values)
+    latest = browser_results_payload("latest only", values)
+
+    assert [item["file_path"] for item in all_versions["items"]] == [first_path]
+    assert [item["file_path"] for item in latest["items"]] == []
 
 
 def test_browser_ready_tag_filter_only_returns_ready_version(

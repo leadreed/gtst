@@ -113,11 +113,20 @@ function ensureStyles() {
       padding: 3px 6px;
     }
 
-    .gtst-browser-tag-summary-chip:hover,
-    .gtst-browser-tag-summary-chip[data-active="true"] {
+    .gtst-browser-tag-summary-chip:hover {
       background: rgba(120, 168, 255, 0.28);
       border-color: rgba(120, 168, 255, 0.72);
       color: #f2f7ff;
+    }
+
+    .gtst-browser-tag-summary-chip[data-active="true"] {
+      background: rgba(120, 168, 255, 0.42);
+      border-color: rgba(174, 206, 255, 0.95);
+      box-shadow:
+        0 0 0 1px rgba(174, 206, 255, 0.35),
+        0 0 10px rgba(120, 168, 255, 0.28);
+      color: #ffffff;
+      font-weight: 700;
     }
 
     .gtst-browser-items {

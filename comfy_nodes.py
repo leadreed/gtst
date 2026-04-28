@@ -669,32 +669,26 @@ def _browser_paths_for_facets(
             return []
         return [file_path]
 
-    if tag_filters:
-        paths = [
-            root.get_version(version=asset_version, facets=facets)
-            for asset_version in root.list_versions(facets=facets)
-        ]
-        paths = [
-            file_path
-            for file_path in paths
-            if _file_matches_tags(root, file_path, tag_filters, tag_filter_mode)
-        ]
-        if mode == "all versions":
-            return paths
-        return paths[-1:] if paths else []
-
     if mode == "all versions":
         paths: list[str] = []
         for asset_version in root.list_versions(facets=facets):
             paths.append(root.get_version(version=asset_version, facets=facets))
-        return paths
+    else:
+        try:
+            if mode == "current":
+                paths = [root.get_current(facets=facets)]
+            else:
+                paths = [root.get_latest(facets=facets)]
+        except GtstError:
+            return []
 
-    try:
-        if mode == "current":
-            return [root.get_current(facets=facets)]
-        return [root.get_latest(facets=facets)]
-    except GtstError:
-        return []
+    if tag_filters:
+        return [
+            file_path
+            for file_path in paths
+            if _file_matches_tags(root, file_path, tag_filters, tag_filter_mode)
+        ]
+    return paths
 
 
 def _file_matches_tags(
