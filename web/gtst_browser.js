@@ -129,6 +129,7 @@ function ensureStyles() {
       display: grid;
       flex: 1 1 auto;
       gap: 8px;
+      min-height: 0;
       overflow-x: hidden;
       overflow-y: auto;
       padding: 8px;
@@ -940,7 +941,7 @@ function renderGrid(node) {
   const size = tileSize(node);
   const scrollTop = state.items.scrollTop;
   state.items.style.gridTemplateColumns = `repeat(auto-fill, minmax(${size}px, 1fr))`;
-  state.items.style.gridAutoRows = "auto";
+  state.items.style.gridAutoRows = `${size + 72}px`;
   state.items.replaceChildren(
     ...state.payloadItems.map((item) => renderTile(node, item))
   );
