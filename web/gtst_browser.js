@@ -5,6 +5,7 @@ const STYLE_ID = "gtst-browser-style";
 const RESULT_LIMIT = 200;
 const DEFAULT_NODE_SIZE = [420, 520];
 const WIDGET_ROW_HEIGHT = 20;
+const TILE_FOOTER_HEIGHT = 50;
 
 const browserNodes = new Set();
 let suggestionWidgets = ["version", "tag"];
@@ -223,13 +224,12 @@ function ensureStyles() {
 
     .gtst-browser-preview {
       align-items: center;
-      aspect-ratio: 16 / 9;
       background: #101216;
       box-sizing: border-box;
       display: flex;
-      flex: 0 0 auto;
+      flex: 1 1 auto;
       justify-content: center;
-      min-height: var(--gtst-browser-preview-size, 140px);
+      min-height: 0;
       overflow: hidden;
       padding: 6px;
       position: relative;
@@ -303,10 +303,10 @@ function ensureStyles() {
 
     .gtst-browser-label {
       box-sizing: border-box;
-      flex: 0 0 auto;
+      flex: 0 0 var(--gtst-browser-footer-size, 50px);
       min-width: 0;
       overflow: hidden;
-      padding: 5px 7px 6px;
+      padding: 5px 7px 5px;
     }
 
     .gtst-browser-title,
@@ -330,7 +330,7 @@ function ensureStyles() {
     .gtst-browser-tags {
       display: flex;
       gap: 4px;
-      margin-top: 5px;
+      margin-top: 4px;
       overflow: hidden;
       white-space: nowrap;
       width: 100%;
@@ -765,10 +765,6 @@ function updateTagSummary(node) {
 function renderPreview(item) {
   const preview = document.createElement("div");
   preview.className = "gtst-browser-preview";
-  preview.style.aspectRatio = "16 / 9";
-  preview.style.flex = "0 0 auto";
-  preview.style.height = "auto";
-  preview.style.minHeight = "var(--gtst-browser-preview-size, 140px)";
   preview.append(renderVersionBadge(item));
 
   if (item.media_type === "image") {
@@ -857,6 +853,7 @@ function renderTile(node, item) {
   const button = document.createElement("div");
   button.className = "gtst-browser-tile";
   button.style.setProperty("--gtst-browser-preview-size", `${tileSize(node)}px`);
+  button.style.setProperty("--gtst-browser-footer-size", `${TILE_FOOTER_HEIGHT}px`);
   button.dataset.path = item.file_path ?? "";
   button.dataset.selected = String(item.file_path === selectedPath(node));
   button.role = "button";
@@ -943,7 +940,7 @@ function renderGrid(node) {
   const size = tileSize(node);
   const scrollTop = state.items.scrollTop;
   state.items.style.gridTemplateColumns = `repeat(auto-fill, minmax(${size}px, 1fr))`;
-  state.items.style.gridAutoRows = "auto";
+  state.items.style.gridAutoRows = `${size + TILE_FOOTER_HEIGHT}px`;
   state.items.replaceChildren(
     ...state.payloadItems.map((item) => renderTile(node, item))
   );
