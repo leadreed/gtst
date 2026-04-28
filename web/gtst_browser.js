@@ -5,6 +5,7 @@ const STYLE_ID = "gtst-browser-style";
 const RESULT_LIMIT = 200;
 const DEFAULT_NODE_SIZE = [420, 520];
 const WIDGET_ROW_HEIGHT = 20;
+const CREATED_NODE_OFFSET = [460, 0];
 
 const browserNodes = new Set();
 let suggestionWidgets = ["version", "tag"];
@@ -409,8 +410,36 @@ function showActionError(node, error) {
   setResultStatus(node, message);
 }
 
+function createAssetRefNode(browserNode, item) {
+  const created = LiteGraph.createNode("GTSTAssetRef");
+  if (!created) {
+    throw new Error("Could not create GTST Asset Ref node.");
+  }
+
+  created.pos = [
+    browserNode.pos[0] + CREATED_NODE_OFFSET[0],
+    browserNode.pos[1] + CREATED_NODE_OFFSET[1],
+  ];
+  app.graph.add(created);
+
+  for (const [name, value] of Object.entries(item.facets ?? {})) {
+    setWidgetValue(created, name, String(value));
+  }
+  setWidgetValue(created, "version", String(item.version ?? ""));
+  setWidgetValue(created, "tag", "");
+
+  app.canvas.selectNode?.(created);
+  created.setDirtyCanvas?.(true, true);
+  app.graph.setDirtyCanvas?.(true, true);
+  return created;
+}
+
 async function runTileAction(node, item, action) {
   try {
+    if (action === "create-asset-ref") {
+      createAssetRefNode(node, item);
+      return;
+    }
     if (action === "copy") {
       await copyText(item.file_path);
       setResultStatus(node, "Copied path");
@@ -629,6 +658,7 @@ function showTileActionMenu(node, item, anchor) {
     ["Reveal", "reveal", false],
     ["Open", "open", false],
     ["Copy path", "copy", false],
+    ["Create Asset Ref", "create-asset-ref", false],
     [item.is_ready === true ? "Ready" : "Set ready", "set-ready", item.is_ready === true],
   ];
   menu.replaceChildren(
@@ -654,6 +684,7 @@ function showTileActionMenu(node, item, anchor) {
 }
 
 function renderGrid(node) {
+  hideActionMenu();
   const state = ensureOverlay(node);
   const size = tileSize(node);
   state.items.style.gridTemplateColumns = `repeat(auto-fill, minmax(${size}px, 1fr))`;
@@ -750,6 +781,20 @@ function installActionMenuDismissal() {
     }
     hideActionMenu();
   });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      hideActionMenu();
+    }
+  });
+
+  document.addEventListener(
+    "scroll",
+    () => {
+      hideActionMenu();
+    },
+    true
+  );
 }
 
 function positionOverlay(node) {
