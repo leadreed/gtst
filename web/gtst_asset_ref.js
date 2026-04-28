@@ -28,6 +28,21 @@ function isSuggestionNode(node) {
   return isAssetRefNode(node) || isBrowserNode(node);
 }
 
+function isGtstNodeName(name) {
+  return [
+    "GTSTAssetRef",
+    "BrowseGTST",
+    "LoadGTSTImage",
+    "SaveGTSTImage",
+    "LoadGTSTText",
+    "SaveGTSTText",
+    "LoadGTSTVideo",
+    "SaveGTSTVideo",
+    "MarkGTSTReady",
+    "TagGTSTVersion",
+  ].includes(name);
+}
+
 function isSuggestionWidget(widget) {
   return suggestionWidgets.includes(widget?.name);
 }
@@ -141,6 +156,85 @@ function valuesForNode(node) {
       String(node.widgets?.find((widget) => widget.name === name)?.value ?? ""),
     ])
   );
+}
+
+function widgetValue(node, name) {
+  return String(node?.widgets?.find((widget) => widget.name === name)?.value ?? "");
+}
+
+function linkedOriginNode(node, inputName = "asset_ref") {
+  const input = node?.inputs?.find((candidate) => candidate.name === inputName);
+  const linkId = input?.link;
+  const graph = node?.graph ?? app.graph;
+  const link = linkId != null ? graph?.links?.[linkId] : null;
+  if (!link) {
+    return null;
+  }
+  return graph?.getNodeById?.(link.origin_id) ?? null;
+}
+
+function revealTargetForNode(node) {
+  if (isAssetRefNode(node)) {
+    return { kind: "values", values: valuesForNode(node) };
+  }
+
+  if (isBrowserNode(node)) {
+    const selected = widgetValue(node, "selected_file_path");
+    if (selected) {
+      return { kind: "path", path: selected };
+    }
+    return { kind: "values", values: valuesForNode(node) };
+  }
+
+  const upstream = linkedOriginNode(node);
+  if (isBrowserNode(upstream)) {
+    const selected = widgetValue(upstream, "selected_file_path");
+    if (selected) {
+      return { kind: "path", path: selected };
+    }
+    return { kind: "values", values: valuesForNode(upstream) };
+  }
+  if (isAssetRefNode(upstream)) {
+    return { kind: "values", values: valuesForNode(upstream) };
+  }
+  return null;
+}
+
+function notifyError(message) {
+  console.error(message);
+  if (app.ui?.dialog?.show) {
+    app.ui.dialog.show(String(message));
+  }
+}
+
+async function postJson(url, body) {
+  const response = await api.fetchApi(url, {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
+  });
+  const payload = response.ok ? await response.json() : {};
+  if (!response.ok || payload.ok === false) {
+    throw new Error(payload.error || `GTST request failed: ${response.status}`);
+  }
+  return payload;
+}
+
+async function revealNodeTarget(node) {
+  const target = revealTargetForNode(node);
+  if (!target) {
+    throw new Error("No resolvable GTST asset reference found for this node.");
+  }
+  if (target.kind === "path") {
+    return postJson("/gtst/path_action", {
+      action: "reveal",
+      path: target.path,
+    });
+  }
+  return postJson("/gtst/resolve_path_action", {
+    action: "reveal",
+    values: target.values,
+  });
 }
 
 async function suggestionUrl(field, node) {
@@ -544,6 +638,29 @@ function enhanceNodePrototype(nodeType, nodeData) {
   };
 }
 
+function addGtstContextMenu(nodeType) {
+  const originalGetExtraMenuOptions = nodeType.prototype.getExtraMenuOptions;
+  nodeType.prototype.getExtraMenuOptions = function (canvas, options) {
+    originalGetExtraMenuOptions?.apply(this, arguments);
+    options.push({
+      content: "GTST",
+      has_submenu: true,
+      submenu: {
+        options: [
+          {
+            content: "Reveal",
+            callback: () => {
+              revealNodeTarget(this).catch((error) => {
+                notifyError(error?.message ?? error);
+              });
+            },
+          },
+        ],
+      },
+    });
+  };
+}
+
 app.registerExtension({
   name: "gtst.assetRefFacetAutocomplete",
 
@@ -556,9 +673,12 @@ app.registerExtension({
 
   async beforeRegisterNodeDef(nodeType, nodeData) {
     await loadSchema();
-    if (!["GTSTAssetRef", "BrowseGTST"].includes(nodeData.name)) {
+    if (!isGtstNodeName(nodeData.name)) {
       return;
     }
-    enhanceNodePrototype(nodeType, nodeData);
+    addGtstContextMenu(nodeType);
+    if (["GTSTAssetRef", "BrowseGTST"].includes(nodeData.name)) {
+      enhanceNodePrototype(nodeType, nodeData);
+    }
   },
 });
