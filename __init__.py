@@ -58,6 +58,7 @@ def _register_routes() -> None:
                 "ready_tag_name": "",
                 "default_filename_facet": "",
                 "browser_modes": ["current", "latest only", "all versions"],
+                "browser_tag_filter_modes": ["OR", "AND"],
                 "error": str(exc),
             }
         return web.json_response(payload)
@@ -97,6 +98,7 @@ def _register_routes() -> None:
                 name: str(query.get(name, ""))
                 for name in schema_payload["suggestion_fields"]
             }
+            values["tag_filter_mode"] = str(query.get("tag_filter_mode", "OR"))
             payload = browser_results_payload(mode, values, limit=limit)
         except Exception as exc:
             payload = {

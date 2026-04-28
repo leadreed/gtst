@@ -22,6 +22,7 @@ DEFAULT_IMAGE_EXTENSION = ".png"
 ASSET_REF_TYPE = "GTST_ASSET_REF"
 STATIC_SUGGESTION_WIDGETS = ("version", "tag")
 BROWSER_MODES = ("current", "latest only", "all versions")
+BROWSER_TAG_FILTER_MODES = ("OR", "AND")
 BROWSER_RESULT_LIMIT = 200
 TEXT_PREVIEW_LIMIT = 500
 IMAGE_EXTENSIONS = {".apng", ".avif", ".bmp", ".gif", ".jpeg", ".jpg", ".png", ".webp"}
@@ -75,6 +76,7 @@ def schema_metadata_payload() -> dict[str, Any]:
         "ready_tag_name": root.config.ready_tag_name,
         "default_filename_facet": root.config.default_filename_facet,
         "browser_modes": list(BROWSER_MODES),
+        "browser_tag_filter_modes": list(BROWSER_TAG_FILTER_MODES),
     }
 
 
@@ -119,6 +121,16 @@ def _tag_input(default: str = "") -> tuple[str, dict[str, object]]:
         {
             "default": default,
             "tooltip": "Tag name. Leave empty to use ready/current resolution.",
+        },
+    )
+
+
+def _tag_filter_mode_input(default: str = "OR") -> tuple[list[str], dict[str, object]]:
+    return (
+        list(BROWSER_TAG_FILTER_MODES),
+        {
+            "default": default,
+            "tooltip": "How multiple comma-separated tags are matched.",
         },
     )
 
@@ -633,15 +645,27 @@ def _browser_item(root: GtstRoot, file_path: str) -> dict[str, Any]:
 
 
 def _browser_paths_for_facets(
-    root: GtstRoot, facets: dict[str, str], mode: str, version: str, tag: str
+    root: GtstRoot,
+    facets: dict[str, str],
+    mode: str,
+    version: str,
+    tag: str,
+    tag_filter_mode: str = "OR",
 ) -> list[str]:
     tag_filters = _split_tags(tag)
+    tag_filter_mode = (
+        tag_filter_mode
+        if tag_filter_mode in BROWSER_TAG_FILTER_MODES
+        else "OR"
+    )
     if version:
         try:
             file_path = root.get_version(version=version, facets=facets)
         except GtstError:
             return []
-        if tag_filters and not _file_matches_tags(root, file_path, tag_filters):
+        if tag_filters and not _file_matches_tags(
+            root, file_path, tag_filters, tag_filter_mode
+        ):
             return []
         return [file_path]
 
@@ -653,7 +677,7 @@ def _browser_paths_for_facets(
         paths = [
             file_path
             for file_path in paths
-            if _file_matches_tags(root, file_path, tag_filters)
+            if _file_matches_tags(root, file_path, tag_filters, tag_filter_mode)
         ]
         if mode == "all versions":
             return paths
@@ -673,10 +697,14 @@ def _browser_paths_for_facets(
         return []
 
 
-def _file_matches_tags(root: GtstRoot, file_path: str, tags: list[str]) -> bool:
+def _file_matches_tags(
+    root: GtstRoot, file_path: str, tags: list[str], tag_filter_mode: str = "OR"
+) -> bool:
     metadata = _metadata(root, file_path)
     file_tags = set(metadata["tags"])
-    return all(tag in file_tags for tag in tags)
+    if tag_filter_mode == "AND":
+        return all(tag in file_tags for tag in tags)
+    return any(tag in file_tags for tag in tags)
 
 
 def browser_results_payload(
@@ -690,11 +718,21 @@ def browser_results_payload(
     filters = _browser_filter_facets(root, values)
     version = str((values or {}).get("version", "")).strip()
     tag = str((values or {}).get("tag", "")).strip()
+    tag_filter_mode = str((values or {}).get("tag_filter_mode", "OR")).strip().upper()
+    if tag_filter_mode not in BROWSER_TAG_FILTER_MODES:
+        tag_filter_mode = "OR"
     items: list[dict[str, Any]] = []
     capped = False
 
     for facets in _iter_browser_facets(root, filters):
-        for file_path in _browser_paths_for_facets(root, facets, mode, version, tag):
+        for file_path in _browser_paths_for_facets(
+            root,
+            facets,
+            mode,
+            version,
+            tag,
+            tag_filter_mode,
+        ):
             try:
                 items.append(_browser_item(root, file_path))
             except GtstError:
@@ -707,6 +745,7 @@ def browser_results_payload(
 
     return {
         "mode": mode,
+        "tag_filter_mode": tag_filter_mode,
         "root_path": str(root.path),
         "filters": filters,
         "limit": limit,
@@ -1228,6 +1267,7 @@ class BrowseGtst:
                 **_browser_asset_inputs(),
                 "version": _version_input(),
                 "tag": _tag_input(),
+                "tag_filter_mode": _tag_filter_mode_input(),
                 "selected_file_path": (
                     "STRING",
                     {
@@ -1254,11 +1294,12 @@ class BrowseGtst:
         mode: str,
         version: str,
         tag: str,
+        tag_filter_mode: str,
         selected_file_path: str,
         preview_item_size: int,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        del mode, version, tag, preview_item_size, kwargs
+        del mode, version, tag, tag_filter_mode, preview_item_size, kwargs
         return _output(selected_browser_asset(selected_file_path))
 
 

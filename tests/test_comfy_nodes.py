@@ -357,7 +357,44 @@ def test_browser_all_versions_and_tag_filter(
     assert [item["file_path"] for item in tagged["items"]] == [first_path]
 
 
-def test_browser_filters_by_multiple_tags(
+def test_browser_filters_by_multiple_tags_using_default_or(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    asset_ref = make_ref(tmp_path, monkeypatch, tree="texts", asset="caption01")
+    first_path = SaveGtstText().save("first", asset_ref, "", False, "favorite")[
+        "result"
+    ][1]
+    second_path = SaveGtstText().save(
+        "second",
+        asset_ref,
+        "",
+        False,
+        "favorite, selected",
+    )["result"][1]
+    third_path = SaveGtstText().save("third", asset_ref, "", False, "selected")[
+        "result"
+    ][1]
+
+    values = {
+        "project": "project1",
+        "tree": "texts",
+        "asset": "caption01",
+        "tag": "favorite, selected",
+    }
+    all_versions = browser_results_payload("all versions", values)
+    latest = browser_results_payload("latest only", values)
+
+    assert first_path != second_path
+    assert [item["file_path"] for item in all_versions["items"]] == [
+        first_path,
+        second_path,
+        third_path,
+    ]
+    assert [item["file_path"] for item in latest["items"]] == [third_path]
+    assert all_versions["tag_filter_mode"] == "OR"
+
+
+def test_browser_filters_by_multiple_tags_using_and(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
     asset_ref = make_ref(tmp_path, monkeypatch, tree="texts", asset="caption01")
@@ -378,6 +415,7 @@ def test_browser_filters_by_multiple_tags(
         "tree": "texts",
         "asset": "caption01",
         "tag": "favorite, selected",
+        "tag_filter_mode": "AND",
     }
     all_versions = browser_results_payload("all versions", values)
     latest = browser_results_payload("latest only", values)
@@ -385,6 +423,7 @@ def test_browser_filters_by_multiple_tags(
     assert first_path != second_path
     assert [item["file_path"] for item in all_versions["items"]] == [second_path]
     assert [item["file_path"] for item in latest["items"]] == [second_path]
+    assert all_versions["tag_filter_mode"] == "AND"
 
 
 def test_browser_ready_tag_filter_only_returns_ready_version(
@@ -431,6 +470,7 @@ def test_browser_multi_tag_filter_supports_ready(
         "tree": "texts",
         "asset": "caption01",
         "tag": "ready, favorite",
+        "tag_filter_mode": "AND",
     }
     payload = browser_results_payload("all versions", values)
 
@@ -472,6 +512,7 @@ def test_browser_selection_reconstructs_asset_ref(
         subVariant="",
         version="",
         tag="",
+        tag_filter_mode="OR",
         selected_file_path=saved,
         preview_item_size=140,
     )
@@ -745,6 +786,7 @@ def test_schema_metadata_payload_uses_active_root_schema(
     assert payload["suggestion_fields"] == ["show", "shot", "name", "version", "tag"]
     assert payload["default_filename_facet"] == "name"
     assert payload["ready_tag_name"] == "ready"
+    assert payload["browser_tag_filter_modes"] == ["OR", "AND"]
 
 
 def test_default_filename_facet_errors_when_unresolved(

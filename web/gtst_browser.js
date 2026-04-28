@@ -9,6 +9,7 @@ const WIDGET_ROW_HEIGHT = 20;
 const browserNodes = new Set();
 let suggestionWidgets = ["version", "tag"];
 let browserModes = ["current", "latest only", "all versions"];
+let tagFilterModes = ["OR", "AND"];
 let schemaPromise = null;
 let animationStarted = false;
 let executionRefreshTimer = null;
@@ -29,6 +30,9 @@ async function loadSchema() {
         browserModes = Array.isArray(payload.browser_modes)
           ? payload.browser_modes
           : browserModes;
+        tagFilterModes = Array.isArray(payload.browser_tag_filter_modes)
+          ? payload.browser_tag_filter_modes
+          : tagFilterModes;
         return payload;
       })
       .catch(() => ({}));
@@ -389,12 +393,24 @@ function modeWidget(node) {
   return node.widgets?.find((widget) => widget.name === "mode");
 }
 
+function tagFilterModeWidget(node) {
+  return node.widgets?.find((widget) => widget.name === "tag_filter_mode");
+}
+
 function normalizedMode(node) {
   const mode = modeWidget(node);
   sanitizeModeWidget(node, mode);
   return browserModes.includes(String(mode?.value ?? ""))
     ? String(mode.value)
     : "current";
+}
+
+function normalizedTagFilterMode(node) {
+  const mode = tagFilterModeWidget(node);
+  sanitizeTagFilterModeWidget(node, mode);
+  return tagFilterModes.includes(String(mode?.value ?? ""))
+    ? String(mode.value)
+    : "OR";
 }
 
 function browserValues(node) {
@@ -435,6 +451,7 @@ async function browserUrl(node) {
   await loadSchema();
   const params = new URLSearchParams({
     mode: normalizedMode(node),
+    tag_filter_mode: normalizedTagFilterMode(node),
     limit: String(RESULT_LIMIT),
   });
   for (const [name, value] of Object.entries(browserValues(node))) {
@@ -1107,6 +1124,18 @@ function wrapBrowserWidgets(node) {
     };
   }
 
+  const tagFilterMode = tagFilterModeWidget(node);
+  sanitizeTagFilterModeWidget(node, tagFilterMode);
+  if (tagFilterMode && !tagFilterMode.gtstBrowserWrapped) {
+    tagFilterMode.gtstBrowserWrapped = true;
+    const original = tagFilterMode.callback;
+    tagFilterMode.callback = function () {
+      const result = original?.apply(this, arguments);
+      refreshBrowser(node);
+      return result;
+    };
+  }
+
   const size = node.widgets?.find((widget) => widget.name === "preview_item_size");
   if (size && !size.gtstBrowserWrapped) {
     size.gtstBrowserWrapped = true;
@@ -1119,21 +1148,29 @@ function wrapBrowserWidgets(node) {
   }
 }
 
-function sanitizeModeWidget(node, mode) {
-  if (!mode) {
+function sanitizeComboWidget(node, widget, values, fallback) {
+  if (!widget) {
     return;
   }
-  mode.options ??= {};
-  mode.options.values = browserModes;
-  mode.options.serialize = true;
-  if (Array.isArray(mode.values)) {
-    mode.values = browserModes;
+  widget.options ??= {};
+  widget.options.values = values;
+  widget.options.serialize = true;
+  if (Array.isArray(widget.values)) {
+    widget.values = values;
   }
-  if (!browserModes.includes(String(mode.value ?? ""))) {
-    mode.value = "current";
-    mode.callback?.("current", app.canvas, node, app.canvas?.graph_mouse, {});
+  if (!values.includes(String(widget.value ?? ""))) {
+    widget.value = fallback;
+    widget.callback?.(fallback, app.canvas, node, app.canvas?.graph_mouse, {});
     node.setDirtyCanvas?.(true, true);
   }
+}
+
+function sanitizeModeWidget(node, mode) {
+  sanitizeComboWidget(node, mode, browserModes, "current");
+}
+
+function sanitizeTagFilterModeWidget(node, mode) {
+  sanitizeComboWidget(node, mode, tagFilterModes, "OR");
 }
 
 window.addEventListener("gtst:browser-input-committed", (event) => {
