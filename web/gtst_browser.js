@@ -5,7 +5,7 @@ const STYLE_ID = "gtst-browser-style";
 const RESULT_LIMIT = 200;
 const DEFAULT_NODE_SIZE = [420, 520];
 const WIDGET_ROW_HEIGHT = 20;
-const TILE_FOOTER_HEIGHT = 40;
+const TILE_FOOTER_HEIGHT = 45;
 
 const browserNodes = new Set();
 let suggestionWidgets = ["version", "tag"];
