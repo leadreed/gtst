@@ -227,13 +227,13 @@ function ensureStyles() {
 
     .gtst-browser-preview {
       align-items: center;
+      aspect-ratio: 16 / 9;
       background: #101216;
       box-sizing: border-box;
       display: flex;
-      flex: 0 0 var(--gtst-browser-preview-size, 140px);
-      height: var(--gtst-browser-preview-size, 140px);
+      flex: 0 0 auto;
       justify-content: center;
-      min-height: 0;
+      min-height: var(--gtst-browser-preview-size, 140px);
       overflow: hidden;
       padding: 6px;
       position: relative;
