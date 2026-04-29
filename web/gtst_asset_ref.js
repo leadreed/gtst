@@ -283,15 +283,18 @@ function graphToClient(x, y) {
 
 function positionMenu() {
   if (!active) {
-    return;
+    return false;
   }
   const menu = menuElement();
   if (active.input instanceof HTMLInputElement) {
+    if (!active.input.isConnected) {
+      return false;
+    }
     const rect = active.input.getBoundingClientRect();
     menu.style.left = `${rect.left}px`;
     menu.style.top = `${rect.bottom + 4}px`;
     menu.style.width = `${Math.max(140, rect.width)}px`;
-    return;
+    return true;
   }
 
   const widgetY = active.widget.last_y ?? 0;
@@ -302,9 +305,11 @@ function positionMenu() {
   menu.style.left = `${x}px`;
   menu.style.top = `${y}px`;
   menu.style.width = `${Math.max(140, (active.node.size?.[0] ?? 180) * scale - 16)}px`;
+  return true;
 }
 
 function hideMenu() {
+  window.clearTimeout(debounceTimer);
   menuValues = [];
   highlightedIndex = 0;
   requestId += 1;
@@ -320,6 +325,10 @@ function clearActive() {
 }
 
 function renderMenu(values) {
+  if (!active) {
+    hideMenu();
+    return;
+  }
   const menu = menuElement();
   menu.replaceChildren(
     ...values.map((value, index) => {
@@ -340,7 +349,10 @@ function renderMenu(values) {
     return;
   }
 
-  positionMenu();
+  if (!positionMenu()) {
+    hideMenu();
+    return;
+  }
   menu.style.display = "block";
 }
 
