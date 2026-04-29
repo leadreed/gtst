@@ -772,7 +772,7 @@ function updateTagSummary(node) {
   state.tagSummary.style.display = "flex";
 }
 
-function renderPreview(item) {
+function renderGtstPreview(item) {
   const preview = document.createElement("div");
   preview.className = "gtst-browser-preview";
   preview.append(renderVersionBadge(item));
@@ -840,7 +840,7 @@ function displayVersion(version) {
   return String(version ?? "").replace(/^v0*(\d+)$/, "v$1");
 }
 
-function renderTileTags(item) {
+function renderGtstTileTags(item) {
   const tags = item.tags ?? [];
   if (!tags.length) {
     return null;
@@ -859,7 +859,7 @@ function renderTileTags(item) {
   return row;
 }
 
-function browserItemTooltip(item) {
+function gtstItemTooltip(item) {
   const tags = item.tags?.length ? item.tags.join(", ") : "none";
   return [
     item.label ?? "GTST asset",
@@ -877,7 +877,7 @@ function renderTile(node, item) {
   button.style.setProperty("--gtst-browser-footer-size", `${TILE_FOOTER_HEIGHT}px`);
   button.dataset.path = item.file_path ?? "";
   button.dataset.selected = String(item.file_path === selectedPath(node));
-  button.title = browserItemTooltip(item);
+  button.title = gtstItemTooltip(item);
   button.role = "button";
   button.tabIndex = 0;
 
@@ -894,12 +894,12 @@ function renderTile(node, item) {
   title.className = "gtst-browser-title";
   title.textContent = item.label ?? item.version ?? "GTST asset";
 
-  const tagRow = renderTileTags(item);
+  const tagRow = renderGtstTileTags(item);
   label.append(title);
   if (tagRow) {
     label.append(tagRow);
   }
-  button.append(renderPreview(item), menuButton, label);
+  button.append(renderGtstPreview(item), menuButton, label);
   button.addEventListener("click", () => {
     const nextValue = item.file_path === selectedPath(node) ? "" : item.file_path;
     setWidgetValue(node, "selected_file_path", nextValue);
