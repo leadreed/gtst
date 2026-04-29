@@ -305,8 +305,9 @@ Available nodes:
   JSON, notes, or metadata. If `file_name` is empty, the configured default
   filename facet is used. This is an output node and also returns the saved text
   as a normal output for downstream text preview/debug nodes.
-- `Load GTST Video`: resolve a GTST video asset and output the video file path,
-  with a video preview.
+- `Load GTST Video`: load a GTST video asset as a ComfyUI `VIDEO`, and output
+  the video file path and metadata JSON. Video previews are handled by GTST's
+  custom preview system.
 - `Save GTST Video`: save a ComfyUI `VIDEO` as a new GTST version, using
   `format` and `codec` controls like ComfyUI's built-in Save Video node. If
   `file_name` is empty, the configured default filename facet is used with the
