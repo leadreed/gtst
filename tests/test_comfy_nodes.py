@@ -641,6 +641,7 @@ def test_preview_asset_payload_fails_cleanly_for_incomplete_ref(
     assert payload["item"] is None
     assert "Incomplete" in payload["error"]
 
+
 def test_resolve_path_action_reveals_deepest_existing_facet_path(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
@@ -674,7 +675,7 @@ def test_resolve_path_action_reveals_deepest_existing_facet_path(
     assert opened[-1] == ("reveal", Path(saved))
 
 
-def test_windows_reveal_selects_file_with_quoted_explorer_path(
+def test_windows_reveal_selects_file_with_separate_explorer_path(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
     target = tmp_path / "folder with spaces, comma" / "asset file, final.txt"
@@ -690,7 +691,7 @@ def test_windows_reveal_selects_file_with_quoted_explorer_path(
 
     _os_action_path("reveal", target)
 
-    assert calls == [(["explorer.exe", f'/select,"{target.resolve()}"'], False)]
+    assert calls == [(["explorer.exe", "/select,", str(target.resolve())], False)]
 
 
 def test_windows_reveal_opens_folder_with_explorer_exe(

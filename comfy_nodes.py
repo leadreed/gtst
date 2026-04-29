@@ -504,34 +504,66 @@ def _resolved_browser_target(values: dict[str, str] | None = None) -> Path:
         return root.asset_dir(facets=facets).resolve()
 
 
+def _debug_path_action(message: str, **fields: Any) -> None:
+    details = " ".join(
+        f"{key}={value!r}" for key, value in fields.items() if value is not None
+    )
+    suffix = f" {details}" if details else ""
+    print(f"[GTST path action] {message}{suffix}", flush=True)
+
+
+def _run_os_path_command(command: list[str]) -> None:
+    _debug_path_action(
+        "launch",
+        command=command,
+        command_line=subprocess.list2cmdline(command),
+    )
+    completed = subprocess.run(command, check=False)
+    _debug_path_action(
+        "completed",
+        command=command,
+        returncode=getattr(completed, "returncode", None),
+    )
+
+
 def _os_action_path(action: str, path: str | Path) -> None:
     resolved = Path(path).expanduser().resolve()
     system = platform.system()
+    _debug_path_action(
+        "resolved action target",
+        action=action,
+        system=system,
+        path=str(resolved),
+        exists=resolved.exists(),
+        is_file=resolved.is_file(),
+        is_dir=resolved.is_dir(),
+    )
 
     if action == "reveal":
         if system == "Darwin":
-            subprocess.run(["open", "-R", str(resolved)], check=False)
+            _run_os_path_command(["open", "-R", str(resolved)])
             return
         if system == "Windows":
             if resolved.is_file():
-                subprocess.run(["explorer.exe", f'/select,"{resolved}"'], check=False)
+                _run_os_path_command(["explorer.exe", "/select,", str(resolved)])
             else:
-                subprocess.run(["explorer.exe", str(resolved)], check=False)
+                _run_os_path_command(["explorer.exe", str(resolved)])
             return
         if resolved.is_file():
-            subprocess.run(["xdg-open", str(resolved.parent)], check=False)
+            _run_os_path_command(["xdg-open", str(resolved.parent)])
         else:
-            subprocess.run(["xdg-open", str(resolved)], check=False)
+            _run_os_path_command(["xdg-open", str(resolved)])
         return
 
     if action == "open":
         if system == "Darwin":
-            subprocess.run(["open", str(resolved)], check=False)
+            _run_os_path_command(["open", str(resolved)])
             return
         if system == "Windows":
+            _debug_path_action("startfile", path=str(resolved))
             os.startfile(str(resolved))  # type: ignore[attr-defined]
             return
-        subprocess.run(["xdg-open", str(resolved)], check=False)
+        _run_os_path_command(["xdg-open", str(resolved)])
         return
 
     raise ValueError(f"Unsupported GTST path action: {action}")
@@ -542,6 +574,13 @@ def path_action_payload(action: str, file_path: str) -> dict[str, Any]:
         raise ValueError(f"Unsupported GTST path action: {action}")
     root = _root()
     path = _path_inside_root(root, file_path)
+    _debug_path_action(
+        "path action request",
+        action=action,
+        raw_path=file_path,
+        root=str(root.path),
+        scoped_path=str(path),
+    )
     if not path.exists():
         raise ValueError(f"GTST path does not exist: {path}")
     _os_action_path(action, path)
@@ -554,7 +593,16 @@ def resolve_path_action_payload(
     if action not in {"reveal", "open"}:
         raise ValueError(f"Unsupported GTST path action: {action}")
     root = _root()
-    path = _path_inside_root(root, _resolved_browser_target(values))
+    target = _resolved_browser_target(values)
+    path = _path_inside_root(root, target)
+    _debug_path_action(
+        "resolved path action request",
+        action=action,
+        values=values,
+        root=str(root.path),
+        target=str(target),
+        scoped_path=str(path),
+    )
     if not path.exists():
         raise ValueError(f"GTST path does not exist: {path}")
     _os_action_path(action, path)
@@ -785,6 +833,7 @@ def preview_asset_payload(values: dict[str, str] | None = None) -> dict[str, Any
         "root_path": str(root.path),
         "item": item,
     }
+
 
 def selected_browser_asset(selected_file_path: str) -> tuple[dict[str, Any], str, str]:
     selected = selected_file_path.strip()
