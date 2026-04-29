@@ -12,6 +12,7 @@ from comfy_nodes import (
     NODE_DISPLAY_NAME_MAPPINGS,
     BrowseGtst,
     GtstAssetRef,
+    LoadGtstImage,
     LoadGtstText,
     LoadGtstVideo,
     MarkGtstReady,
@@ -85,6 +86,30 @@ def make_ref(
         tag="",
     )["result"][0]
     return asset_ref
+
+
+def publish_source_ref(
+    tmp_path: Path,
+    monkeypatch: Any,
+    source_name: str,
+    payload: bytes,
+    tree: str,
+    asset: str,
+) -> dict[str, Any]:
+    asset_ref = make_ref(tmp_path, monkeypatch, tree=tree, asset=asset)
+    source = tmp_path / source_name
+    source.write_bytes(payload)
+    root = GtstRoot.create(asset_ref["root_path"])
+    root.publish(source, facets=asset_ref["facets"])
+    return GtstAssetRef().resolve(
+        project="project1",
+        tree=tree,
+        asset=asset,
+        variant="base",
+        subVariant="default",
+        version="",
+        tag="",
+    )["result"][0]
 
 
 class FakeVideo:
@@ -301,6 +326,37 @@ def test_dynamic_asset_ref_re_resolves_when_ready_moves(
     assert text == "first prompt"
 
 
+def test_load_image_has_no_native_preview_ui(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    asset_ref = publish_source_ref(
+        tmp_path,
+        monkeypatch,
+        "hero.png",
+        b"fake image",
+        tree="images",
+        asset="hero",
+    )
+    monkeypatch.setattr("comfy_nodes._load_image_tensor", lambda path: ("image", "mask"))
+
+    result = LoadGtstImage().load(asset_ref)
+
+    assert "ui" not in result
+    assert result["result"][2].endswith("hero.png")
+
+
+def test_load_image_rejects_non_image_asset(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    asset_ref = make_ref(tmp_path, monkeypatch, tree="images", asset="hero")
+    text_ref = SaveGtstText().save("not an image", asset_ref, "", False, "")[
+        "result"
+    ][0]
+
+    with pytest.raises(ValueError, match="Load GTST Image expected a GTST image asset"):
+        LoadGtstImage().load(text_ref)
+
+
 def test_video_nodes_publish_and_load_video(tmp_path: Path, monkeypatch: Any) -> None:
     asset_ref = make_ref(tmp_path, monkeypatch, tree="videos", asset="shot01")
     video = FakeVideo()
@@ -330,7 +386,21 @@ def test_video_nodes_publish_and_load_video(tmp_path: Path, monkeypatch: Any) ->
     assert video.saved_metadata == {"workflow": {"nodes": []}, "prompt": prompt}
     assert Path(published).read_bytes() == b"fake video"
     assert json.loads(metadata)["tags"] == ["ready", "review"]
-    assert LoadGtstVideo().load(published_ref)["result"][0] == published
+    loaded = LoadGtstVideo().load(published_ref)
+    assert "ui" not in loaded
+    assert loaded["result"][0] == published
+
+
+def test_load_video_rejects_non_video_asset(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    asset_ref = make_ref(tmp_path, monkeypatch, tree="videos", asset="shot01")
+    text_ref = SaveGtstText().save("not a video", asset_ref, "", False, "")[
+        "result"
+    ][0]
+
+    with pytest.raises(ValueError, match="Load GTST Video expected a GTST video asset"):
+        LoadGtstVideo().load(text_ref)
 
 
 def test_browser_current_prefers_ready_then_latest(

@@ -659,6 +659,14 @@ def _media_type(file_path: str | Path) -> str:
     return "file"
 
 
+def _require_media_type(file_path: str | Path, expected: str, node_name: str) -> None:
+    actual = _media_type(file_path)
+    if actual != expected:
+        raise ValueError(
+            f"{node_name} expected a GTST {expected} asset, got {actual}: {file_path}"
+        )
+
+
 def _text_preview(file_path: str | Path) -> str:
     path = Path(file_path)
     try:
@@ -1123,9 +1131,10 @@ class LoadGtstImage:
     def load(self, asset_ref: dict[str, Any]) -> dict[str, Any]:
         root = _ref_root(asset_ref)
         file_path = _ref_file_path(asset_ref)
+        _require_media_type(file_path, "image", "Load GTST Image")
         image, mask = _load_image_tensor(file_path)
         result = (image, mask, file_path, _metadata_json(root, file_path))
-        return _output(result, _preview_image_file_ui(file_path))
+        return _output(result)
 
 
 class SaveGtstImage:
@@ -1276,8 +1285,9 @@ class LoadGtstVideo:
     def load(self, asset_ref: dict[str, Any]) -> dict[str, Any]:
         root = _ref_root(asset_ref)
         file_path = _ref_file_path(asset_ref)
+        _require_media_type(file_path, "video", "Load GTST Video")
         result = (file_path, _metadata_json(root, file_path))
-        return _output(result, _preview_video_ui(file_path))
+        return _output(result)
 
 
 class SaveGtstVideo:
