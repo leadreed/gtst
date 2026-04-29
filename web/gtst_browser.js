@@ -6,6 +6,10 @@ const RESULT_LIMIT = 1000;
 const DEFAULT_NODE_SIZE = [420, 520];
 const WIDGET_ROW_HEIGHT = 20;
 const TILE_FOOTER_HEIGHT = 45;
+const LOAD_PREVIEW_MIN_SIZE = [360, 380];
+const LOAD_PREVIEW_MIN_TOP = 150;
+const LOAD_PREVIEW_INSET = 8;
+const LOAD_PREVIEW_MIN_PANEL_HEIGHT = 150;
 
 const browserNodes = new Set();
 const loadPreviewNodes = new Set();
@@ -29,6 +33,17 @@ function isLoadPreviewNode(node) {
   return ["LoadGTSTImage", "LoadGTSTVideo"].includes(
     node?.comfyClass ?? node?.type
   );
+}
+
+function expectedLoadPreviewMediaType(node) {
+  const name = node?.comfyClass ?? node?.type;
+  if (name === "LoadGTSTImage") {
+    return "image";
+  }
+  if (name === "LoadGTSTVideo") {
+    return "video";
+  }
+  return null;
 }
 
 async function loadSchema() {
@@ -391,6 +406,7 @@ function ensureStyles() {
     }
 
     .gtst-load-preview-body {
+      display: flex;
       flex: 1 1 auto;
       min-height: 0;
     }
@@ -398,6 +414,25 @@ function ensureStyles() {
     .gtst-load-preview-tile {
       cursor: default;
       height: 100%;
+      width: 100%;
+    }
+
+    .gtst-load-preview-message {
+      align-items: center;
+      background: #242830;
+      border: 1px solid #3c4450;
+      border-radius: 6px;
+      box-sizing: border-box;
+      color: #dce3ec;
+      display: flex;
+      flex: 1 1 auto;
+      justify-content: center;
+      line-height: 1.35;
+      min-height: 0;
+      overflow-wrap: anywhere;
+      padding: 12px;
+      text-align: center;
+      width: 100%;
     }
   `;
   if (!style.parentElement) {
@@ -777,7 +812,23 @@ function loadPreviewTop(node) {
       (typeof widget.last_y === "number" ? widget.last_y : 24 + index * WIDGET_ROW_HEIGHT) +
       WIDGET_ROW_HEIGHT
   );
-  return Math.max(70, Math.max(0, ...widgetBottoms) + 10);
+  return Math.max(LOAD_PREVIEW_MIN_TOP, Math.max(0, ...widgetBottoms) + 10);
+}
+
+function enforceLoadPreviewNodeSize(node) {
+  const top = loadPreviewTop(node);
+  const minWidth = LOAD_PREVIEW_MIN_SIZE[0];
+  const minHeight = Math.max(
+    LOAD_PREVIEW_MIN_SIZE[1],
+    top + LOAD_PREVIEW_MIN_PANEL_HEIGHT + LOAD_PREVIEW_INSET
+  );
+  const width = Math.max(node.size?.[0] ?? 0, minWidth);
+  const height = Math.max(node.size?.[1] ?? 0, minHeight);
+  if (node.size?.[0] === width && node.size?.[1] === height) {
+    return;
+  }
+  node.size = [width, height];
+  node.setDirtyCanvas?.(true, true);
 }
 
 function ensureLoadPreviewOverlay(node) {
@@ -1104,14 +1155,25 @@ function loadPreviewValues(node) {
 
 function loadPreviewTileSize(node) {
   const top = loadPreviewTop(node);
-  const width = Math.max(80, (node.size?.[0] ?? 240) - 32);
-  const height = Math.max(80, (node.size?.[1] ?? 260) - top - 54);
+  const width = Math.max(80, (node.size?.[0] ?? 240) - LOAD_PREVIEW_INSET * 4);
+  const height = Math.max(
+    80,
+    (node.size?.[1] ?? 260) - top - LOAD_PREVIEW_INSET * 2 - 34
+  );
   return Math.min(600, Math.max(80, Math.floor(Math.min(width, height))));
 }
 
 function renderLoadPreview(node, item) {
   const state = ensureLoadPreviewOverlay(node);
   state.body.replaceChildren(renderGtstStandaloneTile(item, loadPreviewTileSize(node)));
+}
+
+function renderLoadPreviewMessage(node, message) {
+  const state = ensureLoadPreviewOverlay(node);
+  const element = document.createElement("div");
+  element.className = "gtst-load-preview-message";
+  element.textContent = message;
+  state.body.replaceChildren(element);
 }
 
 async function refreshLoadPreview(node) {
@@ -1143,6 +1205,13 @@ async function refreshLoadPreview(node) {
     if (!payload.ok || !payload.item) {
       state.status.textContent = payload.error || "No preview";
       state.body.replaceChildren();
+      return;
+    }
+    const expected = expectedLoadPreviewMediaType(node);
+    const actual = payload.item.media_type ?? "file";
+    if (expected && actual !== expected) {
+      state.status.textContent = payload.item.subtitle ?? "";
+      renderLoadPreviewMessage(node, `Expected ${expected}, got ${actual}`);
       return;
     }
     state.status.textContent = payload.item.subtitle ?? "";
@@ -1351,10 +1420,20 @@ function positionLoadPreviewOverlay(node) {
     return;
   }
 
+  enforceLoadPreviewNodeSize(node);
   const top = loadPreviewTop(node);
-  const { x, y, scale } = graphToClient(node.pos[0] + 8, node.pos[1] + top);
-  const width = Math.max(120, (node.size?.[0] ?? 260) - 16);
-  const height = Math.max(120, (node.size?.[1] ?? 300) - top - 8);
+  const { x, y, scale } = graphToClient(
+    node.pos[0] + LOAD_PREVIEW_INSET,
+    node.pos[1] + top
+  );
+  const width = Math.max(
+    120,
+    (node.size?.[0] ?? LOAD_PREVIEW_MIN_SIZE[0]) - LOAD_PREVIEW_INSET * 2
+  );
+  const height = Math.max(
+    LOAD_PREVIEW_MIN_PANEL_HEIGHT,
+    (node.size?.[1] ?? LOAD_PREVIEW_MIN_SIZE[1]) - top - LOAD_PREVIEW_INSET
+  );
   state.element.style.display = "flex";
   state.element.style.left = `${x}px`;
   state.element.style.top = `${y}px`;
@@ -1516,9 +1595,10 @@ app.registerExtension({
     nodeType.prototype.onNodeCreated = function () {
       originalOnNodeCreated?.apply(this, arguments);
       this.size = [
-        Math.max(this.size?.[0] ?? 0, 260),
-        Math.max(this.size?.[1] ?? 0, 320),
+        Math.max(this.size?.[0] ?? 0, LOAD_PREVIEW_MIN_SIZE[0]),
+        Math.max(this.size?.[1] ?? 0, LOAD_PREVIEW_MIN_SIZE[1]),
       ];
+      enforceLoadPreviewNodeSize(this);
       loadPreviewNodes.add(this);
       ensureLoadPreviewOverlay(this);
       scheduleRefreshLoadPreview(this);
@@ -1527,6 +1607,7 @@ app.registerExtension({
     const originalOnConfigure = nodeType.prototype.onConfigure;
     nodeType.prototype.onConfigure = function () {
       const result = originalOnConfigure?.apply(this, arguments);
+      enforceLoadPreviewNodeSize(this);
       loadPreviewNodes.add(this);
       ensureLoadPreviewOverlay(this);
       scheduleRefreshLoadPreview(this);
