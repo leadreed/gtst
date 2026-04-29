@@ -9,6 +9,7 @@ const TILE_FOOTER_HEIGHT = 45;
 const LOAD_PREVIEW_MIN_SIZE = [360, 380];
 const LOAD_PREVIEW_INSET = 8;
 const LOAD_PREVIEW_COMPACT_SIZE = [120, 90];
+const BYPASS_MODE = 4;
 
 const browserNodes = new Set();
 const loadPreviewNodes = new Set();
@@ -43,6 +44,19 @@ function expectedLoadPreviewMediaType(node) {
     return "video";
   }
   return null;
+}
+
+function isNodeMutedOrBypassed(node) {
+  return (
+    node?.mode === globalThis.LiteGraph?.NEVER ||
+    node?.mode === BYPASS_MODE ||
+    node?.flags?.muted === true ||
+    node?.flags?.bypassed === true
+  );
+}
+
+function syncNodeDisabledState(element, node) {
+  element.dataset.nodeDisabled = String(isNodeMutedOrBypassed(node));
 }
 
 async function loadSchema() {
@@ -190,6 +204,12 @@ function ensureStyles() {
     .gtst-browser-tile[data-selected="true"] {
       border-color: #78a8ff;
       box-shadow: inset 0 0 0 1px #78a8ff;
+    }
+
+    .gtst-browser-grid[data-node-disabled="true"] .gtst-browser-tile,
+    .gtst-load-preview[data-node-disabled="true"] .gtst-load-preview-body {
+      filter: grayscale(0.75) saturate(0.45);
+      opacity: 0.42;
     }
 
     .gtst-browser-tile-menu-button {
@@ -626,7 +646,7 @@ async function copyText(text) {
 function showActionError(node, error) {
   const message = error?.message ?? String(error);
   console.error(message);
-  setResultStatus(node, message);
+  setTileActionStatus(node, message);
 }
 
 function promptForTag(item) {
@@ -652,8 +672,8 @@ function positionNodeAtGraphMouse(node) {
   node.pos = [graphMouse[0] - size[0] / 2, graphMouse[1] - 12];
 }
 
-function startAssetRefPlacement(browserNode, node, event) {
-  setResultStatus(browserNode, "Click to place Asset Ref");
+function startAssetRefPlacement(sourceNode, node, event) {
+  setTileActionStatus(sourceNode, "Click to place Asset Ref");
   if (Number.isFinite(event?.clientX) && Number.isFinite(event?.clientY)) {
     positionNodeAtClient(node, event.clientX, event.clientY);
   } else {
@@ -668,7 +688,7 @@ function startAssetRefPlacement(browserNode, node, event) {
     clickEvent.stopPropagation();
     positionNodeAtClient(node, clickEvent.clientX, clickEvent.clientY);
     cleanup();
-    setResultStatus(browserNode, "Asset Ref created");
+    setTileActionStatus(sourceNode, "Asset Ref created");
   };
   const cancel = (keyEvent) => {
     if (keyEvent.key !== "Escape") {
@@ -676,7 +696,7 @@ function startAssetRefPlacement(browserNode, node, event) {
     }
     app.graph.remove?.(node);
     cleanup();
-    setResultStatus(browserNode, "Asset Ref creation canceled");
+    setTileActionStatus(sourceNode, "Asset Ref creation canceled");
   };
   const cleanup = () => {
     document.removeEventListener("pointermove", move, true);
@@ -691,7 +711,7 @@ function startAssetRefPlacement(browserNode, node, event) {
   }, 0);
 }
 
-function createAssetRefNode(browserNode, item, event) {
+function createAssetRefNode(sourceNode, item, event) {
   const created = LiteGraph.createNode("GTSTAssetRef");
   if (!created) {
     throw new Error("Could not create GTST Asset Ref node.");
@@ -707,8 +727,13 @@ function createAssetRefNode(browserNode, item, event) {
   app.canvas.selectNode?.(created);
   created.setDirtyCanvas?.(true, true);
   app.graph.setDirtyCanvas?.(true, true);
-  startAssetRefPlacement(browserNode, created, event);
+  startAssetRefPlacement(sourceNode, created, event);
   return created;
+}
+
+function refreshGtstPreviewSurfaces() {
+  scheduleRefreshAllBrowsers();
+  scheduleRefreshAllLoadPreviews();
 }
 
 async function runTileAction(node, item, action, event) {
@@ -719,12 +744,12 @@ async function runTileAction(node, item, action, event) {
     }
     if (action === "copy") {
       await copyText(item.file_path);
-      setResultStatus(node, "Copied path");
+      setTileActionStatus(node, "Copied path");
       return;
     }
     if (action === "set-ready") {
       await postJson("/gtst/set_ready", { path: item.file_path });
-      await refreshBrowser(node);
+      refreshGtstPreviewSurfaces();
       return;
     }
     if (action === "add-tag") {
@@ -733,7 +758,7 @@ async function runTileAction(node, item, action, event) {
         return;
       }
       await postJson("/gtst/add_tag", { path: item.file_path, tag });
-      await refreshBrowser(node);
+      refreshGtstPreviewSurfaces();
       return;
     }
     await postJson("/gtst/path_action", {
@@ -862,6 +887,16 @@ function ensureLoadPreviewOverlay(node) {
 function setResultStatus(node, text) {
   const state = ensureOverlay(node);
   state.resultStatus.textContent = text;
+}
+
+function canShowBrowserStatus(node) {
+  return isBrowserNode(node);
+}
+
+function setTileActionStatus(node, text) {
+  if (canShowBrowserStatus(node)) {
+    setResultStatus(node, text);
+  }
 }
 
 function selectedItem(node) {
@@ -1044,14 +1079,32 @@ function gtstItemTooltip(item) {
     .join("\n");
 }
 
-function renderGtstStandaloneTile(item, size) {
+function renderTileMenuButton(node, item) {
+  const menuButton = document.createElement("button");
+  menuButton.type = "button";
+  menuButton.className = "gtst-browser-tile-menu-button";
+  menuButton.title = "GTST actions";
+  menuButton.textContent = "⋯";
+  menuButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    showTileActionMenu(node, item, menuButton);
+  });
+  return menuButton;
+}
+
+function renderGtstStandaloneTile(node, item, size) {
   const tile = document.createElement("div");
   tile.className = "gtst-browser-tile gtst-load-preview-tile";
   tile.style.setProperty("--gtst-browser-preview-size", `${size}px`);
   tile.style.setProperty("--gtst-browser-footer-size", `${TILE_FOOTER_HEIGHT}px`);
   tile.dataset.path = item.file_path ?? "";
   tile.title = gtstItemTooltip(item);
-  tile.append(renderGtstPreview(item), renderGtstTileLabel(item));
+  tile.append(
+    renderGtstPreview(item),
+    renderTileMenuButton(node, item),
+    renderGtstTileLabel(item)
+  );
   return tile;
 }
 
@@ -1066,14 +1119,8 @@ function renderTile(node, item) {
   button.role = "button";
   button.tabIndex = 0;
 
-  const menuButton = document.createElement("button");
-  menuButton.type = "button";
-  menuButton.className = "gtst-browser-tile-menu-button";
-  menuButton.title = "GTST actions";
-  menuButton.textContent = "⋯";
-
   const label = renderGtstTileLabel(item);
-  button.append(renderGtstPreview(item), menuButton, label);
+  button.append(renderGtstPreview(item), renderTileMenuButton(node, item), label);
   button.addEventListener("click", () => {
     const nextValue = item.file_path === selectedPath(node) ? "" : item.file_path;
     setWidgetValue(node, "selected_file_path", nextValue);
@@ -1085,11 +1132,6 @@ function renderTile(node, item) {
     }
     event.preventDefault();
     button.click();
-  });
-  menuButton.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    showTileActionMenu(node, item, menuButton);
   });
   return button;
 }
@@ -1185,7 +1227,7 @@ function renderLoadPreview(node, item) {
     return;
   }
   state.previewMode = "tile";
-  state.body.replaceChildren(renderGtstStandaloneTile(item, loadPreviewTileSize(node)));
+  state.body.replaceChildren(renderGtstStandaloneTile(node, item, loadPreviewTileSize(node)));
 }
 
 function replaceLoadPreviewMessage(node, message) {
@@ -1218,7 +1260,7 @@ function syncLoadPreviewCompactMode(node) {
   if (state.previewMode !== "tile") {
     state.previewMode = "tile";
     state.body.replaceChildren(
-      renderGtstStandaloneTile(state.previewItem, loadPreviewTileSize(node))
+      renderGtstStandaloneTile(node, state.previewItem, loadPreviewTileSize(node))
     );
   }
 }
@@ -1448,6 +1490,7 @@ function installActionMenuDismissal() {
 
 function positionOverlay(node) {
   const state = ensureOverlay(node);
+  syncNodeDisabledState(state.element, node);
   if (!node.graph || node.flags?.collapsed) {
     state.element.style.display = "none";
     return;
@@ -1468,6 +1511,7 @@ function positionOverlay(node) {
 
 function positionLoadPreviewOverlay(node) {
   const state = ensureLoadPreviewOverlay(node);
+  syncNodeDisabledState(state.element, node);
   if (!node.graph || node.flags?.collapsed) {
     state.element.style.display = "none";
     return;
