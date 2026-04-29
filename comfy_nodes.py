@@ -756,6 +756,36 @@ def browser_results_payload(
     }
 
 
+def preview_asset_payload(values: dict[str, str] | None = None) -> dict[str, Any]:
+    root = _root()
+    facets = _browser_filter_facets(root, values)
+    if len(facets) != len(root.config.schema):
+        return {
+            "ok": False,
+            "root_path": str(root.path),
+            "item": None,
+            "error": "Incomplete GTST asset reference.",
+        }
+
+    version = str((values or {}).get("version", "")).strip()
+    tag = str((values or {}).get("tag", "")).strip()
+    try:
+        file_path = _resolve_file(root, facets, version=version, tag=tag)
+        item = _browser_item(root, file_path)
+    except GtstError as exc:
+        return {
+            "ok": False,
+            "root_path": str(root.path),
+            "item": None,
+            "error": str(exc),
+        }
+
+    return {
+        "ok": True,
+        "root_path": str(root.path),
+        "item": item,
+    }
+
 def selected_browser_asset(selected_file_path: str) -> tuple[dict[str, Any], str, str]:
     selected = selected_file_path.strip()
     if not selected:

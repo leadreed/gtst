@@ -23,6 +23,7 @@ from comfy_nodes import (
     facet_suggestions_payload,
     _os_action_path,
     path_action_payload,
+    preview_asset_payload,
     resolve_path_action_payload,
     schema_metadata_payload,
     selected_browser_asset,
@@ -606,6 +607,39 @@ def test_browser_selection_requires_file(tmp_path: Path, monkeypatch: Any) -> No
     else:
         raise AssertionError("expected missing browser selection to fail")
 
+
+def test_preview_asset_payload_resolves_browser_item(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    asset_ref = make_ref(tmp_path, monkeypatch, tree="images", asset="hero")
+    saved = SaveGtstText().save("placeholder", asset_ref, "", False, "")["result"][1]
+
+    payload = preview_asset_payload(
+        {
+            "project": "project1",
+            "tree": "images",
+            "asset": "hero",
+            "variant": "base",
+            "subVariant": "default",
+        }
+    )
+
+    assert payload["ok"] is True
+    assert payload["item"]["file_path"] == saved
+    assert payload["item"]["asset_ref"]["version"] == "v001"
+    assert payload["item"]["label"].endswith("v001")
+
+
+def test_preview_asset_payload_fails_cleanly_for_incomplete_ref(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    make_ref(tmp_path, monkeypatch, tree="images", asset="hero")
+
+    payload = preview_asset_payload({"project": "project1", "tree": "images"})
+
+    assert payload["ok"] is False
+    assert payload["item"] is None
+    assert "Incomplete" in payload["error"]
 
 def test_resolve_path_action_reveals_deepest_existing_facet_path(
     tmp_path: Path, monkeypatch: Any

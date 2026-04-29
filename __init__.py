@@ -21,6 +21,7 @@ try:
         browser_results_payload,
         facet_suggestions_payload,
         path_action_payload,
+        preview_asset_payload,
         resolve_path_action_payload,
         schema_metadata_payload,
         set_ready_payload,
@@ -33,6 +34,7 @@ except ImportError:
         browser_results_payload,
         facet_suggestions_payload,
         path_action_payload,
+        preview_asset_payload,
         resolve_path_action_payload,
         schema_metadata_payload,
         set_ready_payload,
@@ -164,6 +166,19 @@ def _register_routes() -> None:
         if not path.is_file():
             raise web.HTTPNotFound()
         return web.FileResponse(path)
+
+    @PromptServer.instance.routes.post("/gtst/preview_asset")
+    async def gtst_preview_asset(request):  # type: ignore[no-untyped-def]
+        try:
+            body = await request.json()
+            values = {
+                str(key): str(value)
+                for key, value in dict(body.get("values", {})).items()
+            }
+            payload = preview_asset_payload(values)
+        except Exception as exc:
+            payload = {"ok": False, "item": None, "error": str(exc)}
+        return web.json_response(payload)
 
     @PromptServer.instance.routes.post("/gtst/path_action")
     async def gtst_path_action(request):  # type: ignore[no-untyped-def]
