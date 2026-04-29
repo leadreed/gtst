@@ -7,9 +7,9 @@ const DEFAULT_NODE_SIZE = [420, 520];
 const WIDGET_ROW_HEIGHT = 20;
 const TILE_FOOTER_HEIGHT = 45;
 const LOAD_PREVIEW_MIN_SIZE = [360, 380];
-const LOAD_PREVIEW_MIN_TOP = 150;
+const LOAD_PREVIEW_MIN_TOP = 0;
 const LOAD_PREVIEW_INSET = 8;
-const LOAD_PREVIEW_MIN_PANEL_HEIGHT = 150;
+const LOAD_PREVIEW_COMPACT_SIZE = [120, 90];
 
 const browserNodes = new Set();
 const loadPreviewNodes = new Set();
@@ -815,22 +815,6 @@ function loadPreviewTop(node) {
   return Math.max(LOAD_PREVIEW_MIN_TOP, Math.max(0, ...widgetBottoms) + 10);
 }
 
-function enforceLoadPreviewNodeSize(node) {
-  const top = loadPreviewTop(node);
-  const minWidth = LOAD_PREVIEW_MIN_SIZE[0];
-  const minHeight = Math.max(
-    LOAD_PREVIEW_MIN_SIZE[1],
-    top + LOAD_PREVIEW_MIN_PANEL_HEIGHT + LOAD_PREVIEW_INSET
-  );
-  const width = Math.max(node.size?.[0] ?? 0, minWidth);
-  const height = Math.max(node.size?.[1] ?? 0, minHeight);
-  if (node.size?.[0] === width && node.size?.[1] === height) {
-    return;
-  }
-  node.size = [width, height];
-  node.setDirtyCanvas?.(true, true);
-}
-
 function ensureLoadPreviewOverlay(node) {
   ensureStyles();
   if (node.gtstLoadPreview?.element) {
@@ -853,6 +837,8 @@ function ensureLoadPreviewOverlay(node) {
     element,
     status,
     body,
+    previewItem: null,
+    previewMode: null,
     requestId: 0,
     resultController: null,
   };
@@ -1153,27 +1139,74 @@ function loadPreviewValues(node) {
   return browserValues(upstream);
 }
 
-function loadPreviewTileSize(node) {
+function loadPreviewPanelSize(node) {
   const top = loadPreviewTop(node);
-  const width = Math.max(80, (node.size?.[0] ?? 240) - LOAD_PREVIEW_INSET * 4);
-  const height = Math.max(
-    80,
-    (node.size?.[1] ?? 260) - top - LOAD_PREVIEW_INSET * 2 - 34
+  return {
+    width: Math.max(0, (node.size?.[0] ?? 0) - LOAD_PREVIEW_INSET * 2),
+    height: Math.max(0, (node.size?.[1] ?? 0) - top - LOAD_PREVIEW_INSET),
+  };
+}
+
+function isCompactLoadPreview(node) {
+  const { width, height } = loadPreviewPanelSize(node);
+  return (
+    width < LOAD_PREVIEW_COMPACT_SIZE[0] ||
+    height < LOAD_PREVIEW_COMPACT_SIZE[1]
   );
-  return Math.min(600, Math.max(80, Math.floor(Math.min(width, height))));
+}
+
+function loadPreviewTileSize(node) {
+  const { width, height } = loadPreviewPanelSize(node);
+  const tileWidth = Math.max(0, width - LOAD_PREVIEW_INSET * 2);
+  const tileHeight = Math.max(0, height - LOAD_PREVIEW_INSET - 34);
+  return Math.min(600, Math.max(80, Math.floor(Math.min(tileWidth, tileHeight))));
 }
 
 function renderLoadPreview(node, item) {
   const state = ensureLoadPreviewOverlay(node);
+  state.previewItem = item;
+  if (isCompactLoadPreview(node)) {
+    state.previewMode = "hidden";
+    replaceLoadPreviewMessage(node, "Preview hidden");
+    return;
+  }
+  state.previewMode = "tile";
   state.body.replaceChildren(renderGtstStandaloneTile(item, loadPreviewTileSize(node)));
 }
 
-function renderLoadPreviewMessage(node, message) {
+function replaceLoadPreviewMessage(node, message) {
   const state = ensureLoadPreviewOverlay(node);
   const element = document.createElement("div");
   element.className = "gtst-load-preview-message";
   element.textContent = message;
   state.body.replaceChildren(element);
+}
+
+function renderLoadPreviewMessage(node, message) {
+  const state = ensureLoadPreviewOverlay(node);
+  state.previewItem = null;
+  state.previewMode = "message";
+  replaceLoadPreviewMessage(node, message);
+}
+
+function syncLoadPreviewCompactMode(node) {
+  const state = ensureLoadPreviewOverlay(node);
+  if (!state.previewItem) {
+    return;
+  }
+  if (isCompactLoadPreview(node)) {
+    if (state.previewMode !== "hidden") {
+      state.previewMode = "hidden";
+      replaceLoadPreviewMessage(node, "Preview hidden");
+    }
+    return;
+  }
+  if (state.previewMode !== "tile") {
+    state.previewMode = "tile";
+    state.body.replaceChildren(
+      renderGtstStandaloneTile(state.previewItem, loadPreviewTileSize(node))
+    );
+  }
 }
 
 async function refreshLoadPreview(node) {
@@ -1190,6 +1223,8 @@ async function refreshLoadPreview(node) {
   const values = loadPreviewValues(node);
   if (!values) {
     state.status.textContent = "Connect GTST Asset Ref";
+    state.previewItem = null;
+    state.previewMode = null;
     state.body.replaceChildren();
     if (state.resultController === controller) {
       state.resultController = null;
@@ -1204,6 +1239,8 @@ async function refreshLoadPreview(node) {
     }
     if (!payload.ok || !payload.item) {
       state.status.textContent = payload.error || "No preview";
+      state.previewItem = null;
+      state.previewMode = null;
       state.body.replaceChildren();
       return;
     }
@@ -1223,6 +1260,8 @@ async function refreshLoadPreview(node) {
     if (requestId !== state.requestId) {
       return;
     }
+    state.previewItem = null;
+    state.previewMode = null;
     state.status.textContent = String(error);
     state.body.replaceChildren();
   } finally {
@@ -1420,20 +1459,12 @@ function positionLoadPreviewOverlay(node) {
     return;
   }
 
-  enforceLoadPreviewNodeSize(node);
   const top = loadPreviewTop(node);
   const { x, y, scale } = graphToClient(
     node.pos[0] + LOAD_PREVIEW_INSET,
     node.pos[1] + top
   );
-  const width = Math.max(
-    120,
-    (node.size?.[0] ?? LOAD_PREVIEW_MIN_SIZE[0]) - LOAD_PREVIEW_INSET * 2
-  );
-  const height = Math.max(
-    LOAD_PREVIEW_MIN_PANEL_HEIGHT,
-    (node.size?.[1] ?? LOAD_PREVIEW_MIN_SIZE[1]) - top - LOAD_PREVIEW_INSET
-  );
+  const { width, height } = loadPreviewPanelSize(node);
   state.element.style.display = "flex";
   state.element.style.left = `${x}px`;
   state.element.style.top = `${y}px`;
@@ -1441,6 +1472,7 @@ function positionLoadPreviewOverlay(node) {
   state.element.style.height = `${height}px`;
   state.element.style.transform = `scale(${scale})`;
   state.element.style.transformOrigin = "top left";
+  syncLoadPreviewCompactMode(node);
 }
 
 function startOverlayLoop() {
@@ -1598,7 +1630,6 @@ app.registerExtension({
         Math.max(this.size?.[0] ?? 0, LOAD_PREVIEW_MIN_SIZE[0]),
         Math.max(this.size?.[1] ?? 0, LOAD_PREVIEW_MIN_SIZE[1]),
       ];
-      enforceLoadPreviewNodeSize(this);
       loadPreviewNodes.add(this);
       ensureLoadPreviewOverlay(this);
       scheduleRefreshLoadPreview(this);
@@ -1607,7 +1638,6 @@ app.registerExtension({
     const originalOnConfigure = nodeType.prototype.onConfigure;
     nodeType.prototype.onConfigure = function () {
       const result = originalOnConfigure?.apply(this, arguments);
-      enforceLoadPreviewNodeSize(this);
       loadPreviewNodes.add(this);
       ensureLoadPreviewOverlay(this);
       scheduleRefreshLoadPreview(this);
