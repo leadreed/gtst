@@ -26,6 +26,10 @@ def write_source(tmp_path: Path, name: str = "simpleBox.txt", text: str = "box")
     return path
 
 
+def path_endswith(path: str, suffix: str) -> bool:
+    return path.replace("\\", "/").endswith(suffix)
+
+
 def facets() -> dict[str, str]:
     return {
         "project": "project1",
@@ -183,8 +187,12 @@ def test_publish_allocates_versions_and_preserves_filename(tmp_path: Path) -> No
     source.write_text("v2", encoding="utf-8")
     second = root.publish(source, **facets())
 
-    assert first.endswith("/project1/assets/simpleBox/base/default/v001/simpleBox.txt")
-    assert second.endswith("/project1/assets/simpleBox/base/default/v002/simpleBox.txt")
+    assert path_endswith(
+        first, "/project1/assets/simpleBox/base/default/v001/simpleBox.txt"
+    )
+    assert path_endswith(
+        second, "/project1/assets/simpleBox/base/default/v002/simpleBox.txt"
+    )
     assert Path(first).read_text(encoding="utf-8") == "v1"
     assert Path(second).read_text(encoding="utf-8") == "v2"
     assert root.list_versions(**facets()) == ["v001", "v002"]
@@ -258,8 +266,8 @@ def test_single_version_tag_uses_asset_level_history(tmp_path: Path) -> None:
     first_tag = root.tag_version("ready", version="v001", **facets())
     second_tag = root.tag_version("ready", version=2, **facets())
 
-    assert first_tag.endswith("/gtst_tags/ready/gtstTag001_ready_001.gtst")
-    assert second_tag.endswith("/gtst_tags/ready/gtstTag002_ready_002.gtst")
+    assert path_endswith(first_tag, "/gtst_tags/ready/gtstTag001_ready_001.gtst")
+    assert path_endswith(second_tag, "/gtst_tags/ready/gtstTag002_ready_002.gtst")
     assert root.get_tagged_version("ready", **facets()) == second
     assert root.find_by_tag("ready", **facets()) == [second]
     assert Path(first).is_file()
@@ -291,8 +299,8 @@ def test_multi_version_tags_live_inside_versions(tmp_path: Path) -> None:
     tag_one = root.tag_version("favorite", version=1, **facets())
     tag_two = root.tag_version("favorite", version=2, **facets())
 
-    assert tag_one.endswith("/v001/gtst_tags/favorite.gtst")
-    assert tag_two.endswith("/v002/gtst_tags/favorite.gtst")
+    assert path_endswith(tag_one, "/v001/gtst_tags/favorite.gtst")
+    assert path_endswith(tag_two, "/v002/gtst_tags/favorite.gtst")
     assert root.find_by_tag("favorite", **facets()) == [first, second]
     assert root.get_latest_by_tag("favorite", **facets()) == second
     assert root.list_tags(version=1, **facets()) == ["favorite"]
@@ -337,9 +345,9 @@ def test_custom_config_version_width_and_schema(tmp_path: Path) -> None:
     source = write_source(tmp_path)
     first = root.publish(source, project="p", asset="a")
 
-    assert first.endswith("/p/a/v0001/simpleBox.txt")
+    assert path_endswith(first, "/p/a/v0001/simpleBox.txt")
     tag = root.tag_version("approved", version=1, project="p", asset="a")
-    assert tag.endswith("/gtst_tags/approved/gtstTag0001_approved_0001.gtst")
+    assert path_endswith(tag, "/gtst_tags/approved/gtstTag0001_approved_0001.gtst")
 
 
 def test_list_values_requires_prior_facets(tmp_path: Path) -> None:
@@ -360,10 +368,12 @@ def test_path_helpers_resolve_facets_and_version(tmp_path: Path) -> None:
 
     assert root.version_from_path(published) == "v001"
     assert root.facets_from_path(published) == facets()
-    assert root.asset_dir_from_path(published).endswith(
+    assert path_endswith(
+        root.asset_dir_from_path(published),
         "/project1/assets/simpleBox/base/default"
     )
-    assert root.version_dir_from_path(published).endswith(
+    assert path_endswith(
+        root.version_dir_from_path(published),
         "/project1/assets/simpleBox/base/default/v001"
     )
 
@@ -410,7 +420,9 @@ def test_cli_publish_ready_get_values_and_info_json(
         == 0
     )
     published = capsys.readouterr().out.strip()
-    assert published.endswith("/project1/assets/hero/base/default/v001/hero.txt")
+    assert path_endswith(
+        published, "/project1/assets/hero/base/default/v001/hero.txt"
+    )
 
     assert cli_main(["get", "project1/assets/hero/base/default/v1"]) == 0
     assert capsys.readouterr().out.strip() == published

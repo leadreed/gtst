@@ -30,6 +30,10 @@ from comfy_nodes import (
 from gtst import GtstRoot
 
 
+def path_endswith(path: str, suffix: str) -> bool:
+    return path.replace("\\", "/").endswith(suffix)
+
+
 def test_comfy_entrypoint_exports_node_mappings() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     spec = importlib.util.spec_from_file_location(
@@ -610,7 +614,7 @@ def test_resolve_path_action_reveals_deepest_existing_facet_path(
         "reveal",
         {"project": "project1", "tree": "texts", "asset": "missing"},
     )
-    assert partial["path"].endswith("/project1/texts")
+    assert path_endswith(partial["path"], "/project1/texts")
     assert opened[-1] == ("reveal", Path(partial["path"]))
 
     exact = resolve_path_action_payload(
@@ -820,7 +824,7 @@ def test_nodes_use_custom_schema_exact_field_names(
     result = SaveGtstText().save("plate notes", asset_ref, "", False, "")
     published = result["result"][1]
 
-    assert published.endswith("/demo/shot010/plateMain/v001/plateMain.txt")
+    assert path_endswith(published, "/demo/shot010/plateMain/v001/plateMain.txt")
     assert json.loads(result["result"][2])["facets"] == {
         "show": "demo",
         "shot": "shot010",

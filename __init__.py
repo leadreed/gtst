@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 
@@ -38,6 +39,42 @@ except ImportError:
     )
 
 
+def _is_asyncio_client_disconnect(context: dict[str, object]) -> bool:
+    exception = context.get("exception")
+    handle = str(context.get("handle", ""))
+    return (
+        isinstance(exception, ConnectionResetError)
+        and getattr(exception, "winerror", None) == 10054
+        and "_ProactorBasePipeTransport._call_connection_lost" in handle
+    )
+
+
+def _install_asyncio_disconnect_filter() -> None:
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+
+    if getattr(loop, "_gtst_disconnect_filter_installed", False):
+        return
+
+    previous_handler = loop.get_exception_handler()
+
+    def handle_exception(
+        current_loop: asyncio.AbstractEventLoop,
+        context: dict[str, object],
+    ) -> None:
+        if _is_asyncio_client_disconnect(context):
+            return
+        if previous_handler is not None:
+            previous_handler(current_loop, context)
+            return
+        current_loop.default_exception_handler(context)
+
+    loop.set_exception_handler(handle_exception)
+    setattr(loop, "_gtst_disconnect_filter_installed", True)
+
+
 def _register_routes() -> None:
     try:
         from aiohttp import web
@@ -47,6 +84,7 @@ def _register_routes() -> None:
 
     @PromptServer.instance.routes.get("/gtst/schema")
     async def gtst_schema(request):  # type: ignore[no-untyped-def]
+        _install_asyncio_disconnect_filter()
         try:
             payload = schema_metadata_payload()
         except Exception as exc:

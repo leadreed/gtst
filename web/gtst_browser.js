@@ -696,6 +696,7 @@ function ensureOverlay(node) {
     status,
     payloadItems: [],
     requestId: 0,
+    resultController: null,
   };
   return node.gtstBrowser;
 }
@@ -985,11 +986,16 @@ async function refreshBrowser(node) {
   }
   const state = ensureOverlay(node);
   const requestId = ++state.requestId;
+  state.resultController?.abort();
+  const controller = new AbortController();
+  state.resultController = controller;
   setResultStatus(node, "Loading previews...");
   updateSelectionStatus(node);
 
   try {
-    const response = await api.fetchApi(await browserUrl(node));
+    const response = await api.fetchApi(await browserUrl(node), {
+      signal: controller.signal,
+    });
     const payload = response.ok ? await response.json() : { items: [] };
     if (requestId !== state.requestId) {
       return;
@@ -1013,12 +1019,19 @@ async function refreshBrowser(node) {
     }
     renderGrid(node);
   } catch (error) {
+    if (error?.name === "AbortError") {
+      return;
+    }
     if (requestId !== state.requestId) {
       return;
     }
     state.payloadItems = [];
     setResultStatus(node, String(error));
     renderGrid(node);
+  } finally {
+    if (state.resultController === controller) {
+      state.resultController = null;
+    }
   }
 }
 
