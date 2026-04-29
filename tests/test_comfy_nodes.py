@@ -21,6 +21,7 @@ from comfy_nodes import (
     add_tag_payload,
     browser_results_payload,
     facet_suggestions_payload,
+    _os_action_path,
     path_action_payload,
     resolve_path_action_payload,
     schema_metadata_payload,
@@ -629,6 +630,43 @@ def test_resolve_path_action_reveals_deepest_existing_facet_path(
     )
     assert exact["path"] == saved
     assert opened[-1] == ("reveal", Path(saved))
+
+
+def test_windows_reveal_selects_file_with_quoted_explorer_path(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    target = tmp_path / "folder with spaces, comma" / "asset file, final.txt"
+    target.parent.mkdir()
+    target.write_text("asset", encoding="utf-8")
+    calls: list[tuple[list[str], bool]] = []
+
+    monkeypatch.setattr("comfy_nodes.platform.system", lambda: "Windows")
+    monkeypatch.setattr(
+        "comfy_nodes.subprocess.run",
+        lambda command, check: calls.append((command, check)),
+    )
+
+    _os_action_path("reveal", target)
+
+    assert calls == [(["explorer.exe", f'/select,"{target.resolve()}"'], False)]
+
+
+def test_windows_reveal_opens_folder_with_explorer_exe(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    target = tmp_path / "folder with spaces, comma"
+    target.mkdir()
+    calls: list[tuple[list[str], bool]] = []
+
+    monkeypatch.setattr("comfy_nodes.platform.system", lambda: "Windows")
+    monkeypatch.setattr(
+        "comfy_nodes.subprocess.run",
+        lambda command, check: calls.append((command, check)),
+    )
+
+    _os_action_path("reveal", target)
+
+    assert calls == [(["explorer.exe", str(target.resolve())], False)]
 
 
 def test_path_action_is_scoped_to_gtst_root(

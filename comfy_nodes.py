@@ -508,9 +508,9 @@ def _os_action_path(action: str, path: str | Path) -> None:
             return
         if system == "Windows":
             if resolved.is_file():
-                subprocess.run(["explorer", f"/select,{resolved}"], check=False)
+                subprocess.run(["explorer.exe", f'/select,"{resolved}"'], check=False)
             else:
-                subprocess.run(["explorer", str(resolved)], check=False)
+                subprocess.run(["explorer.exe", str(resolved)], check=False)
             return
         if resolved.is_file():
             subprocess.run(["xdg-open", str(resolved.parent)], check=False)
