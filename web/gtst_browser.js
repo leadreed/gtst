@@ -7,7 +7,6 @@ const DEFAULT_NODE_SIZE = [420, 520];
 const WIDGET_ROW_HEIGHT = 20;
 const TILE_FOOTER_HEIGHT = 45;
 const LOAD_PREVIEW_MIN_SIZE = [360, 380];
-const LOAD_PREVIEW_MIN_TOP = 0;
 const LOAD_PREVIEW_INSET = 8;
 const LOAD_PREVIEW_COMPACT_SIZE = [120, 90];
 
@@ -806,13 +805,28 @@ function ensureOverlay(node) {
   return node.gtstBrowser;
 }
 
+function loadPreviewSlotBottoms(node, isInput) {
+  const slots = isInput ? node.inputs : node.outputs;
+  return (slots ?? []).map((_, index) => {
+    const pos = node.getConnectionPos?.(isInput, index, [0, 0]);
+    if (!pos || typeof pos[1] !== "number" || typeof node.pos?.[1] !== "number") {
+      return 0;
+    }
+    return pos[1] - node.pos[1] + (LiteGraph?.NODE_SLOT_HEIGHT ?? WIDGET_ROW_HEIGHT) * 0.5;
+  });
+}
+
 function loadPreviewTop(node) {
   const widgetBottoms = (node.widgets ?? []).map(
     (widget, index) =>
       (typeof widget.last_y === "number" ? widget.last_y : 24 + index * WIDGET_ROW_HEIGHT) +
       WIDGET_ROW_HEIGHT
   );
-  return Math.max(LOAD_PREVIEW_MIN_TOP, Math.max(0, ...widgetBottoms) + 10);
+  const slotBottoms = [
+    ...loadPreviewSlotBottoms(node, true),
+    ...loadPreviewSlotBottoms(node, false),
+  ];
+  return Math.max(0, ...widgetBottoms, ...slotBottoms) + LOAD_PREVIEW_INSET;
 }
 
 function ensureLoadPreviewOverlay(node) {
