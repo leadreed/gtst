@@ -929,6 +929,16 @@ def _video_extension(format_name: str) -> str:
     return f".{extension.lstrip('.')}"
 
 
+def _video_from_file(file_path: str) -> Any:
+    try:
+        from comfy_api.latest import InputImpl
+    except ImportError as exc:
+        raise RuntimeError(
+            "Load GTST Video requires ComfyUI's video API to create a VIDEO output."
+        ) from exc
+    return InputImpl.VideoFromFile(file_path)
+
+
 def _comfy_metadata(prompt: Any, extra_pnginfo: Any) -> dict[str, Any] | None:
     try:
         from comfy.cli_args import args
@@ -1263,11 +1273,11 @@ class SaveGtstText:
 
 
 class LoadGtstVideo:
-    """Resolve a GTST video asset path."""
+    """Load a GTST video asset into ComfyUI."""
 
     CATEGORY = CATEGORY
-    RETURN_TYPES = ("STRING", "STRING")
-    RETURN_NAMES = ("video_path", "metadata_json")
+    RETURN_TYPES = ("VIDEO", "STRING", "STRING")
+    RETURN_NAMES = ("video", "video_path", "metadata_json")
     FUNCTION = "load"
 
     @classmethod
@@ -1286,7 +1296,7 @@ class LoadGtstVideo:
         root = _ref_root(asset_ref)
         file_path = _ref_file_path(asset_ref)
         _require_media_type(file_path, "video", "Load GTST Video")
-        result = (file_path, _metadata_json(root, file_path))
+        result = (_video_from_file(file_path), file_path, _metadata_json(root, file_path))
         return _output(result)
 
 

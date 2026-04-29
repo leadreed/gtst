@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+import comfy_nodes
 from comfy_nodes import (
     NODE_CLASS_MAPPINGS,
     NODE_DISPLAY_NAME_MAPPINGS,
@@ -132,6 +133,11 @@ class FakeVideo:
         self.saved_codec = codec
         self.saved_metadata = metadata
         Path(path).write_bytes(self.payload)
+
+
+class FakeLoadedVideo:
+    def __init__(self, path: str) -> None:
+        self.path = path
 
 
 def test_asset_ref_resolve_has_no_preview_ui(
@@ -386,9 +392,18 @@ def test_video_nodes_publish_and_load_video(tmp_path: Path, monkeypatch: Any) ->
     assert video.saved_metadata == {"workflow": {"nodes": []}, "prompt": prompt}
     assert Path(published).read_bytes() == b"fake video"
     assert json.loads(metadata)["tags"] == ["ready", "review"]
+    monkeypatch.setattr(
+        comfy_nodes,
+        "_video_from_file",
+        lambda path: FakeLoadedVideo(path),
+    )
     loaded = LoadGtstVideo().load(published_ref)
     assert "ui" not in loaded
-    assert loaded["result"][0] == published
+    loaded_video, loaded_path, loaded_metadata = loaded["result"]
+    assert isinstance(loaded_video, FakeLoadedVideo)
+    assert loaded_video.path == published
+    assert loaded_path == published
+    assert json.loads(loaded_metadata)["tags"] == ["ready", "review"]
 
 
 def test_load_video_rejects_non_video_asset(
