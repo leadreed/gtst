@@ -324,6 +324,15 @@ function clearActive() {
   hideMenu();
 }
 
+function updateMenuHighlight(index) {
+  highlightedIndex = index;
+  menuElement()
+    .querySelectorAll("button")
+    .forEach((button, buttonIndex) => {
+      button.dataset.highlighted = String(buttonIndex === highlightedIndex);
+    });
+}
+
 function renderMenu(values) {
   if (!active) {
     hideMenu();
@@ -336,6 +345,9 @@ function renderMenu(values) {
       item.type = "button";
       item.textContent = value;
       item.dataset.highlighted = String(index === highlightedIndex);
+      item.addEventListener("pointerenter", () => {
+        updateMenuHighlight(index);
+      });
       item.addEventListener("mousedown", (event) => {
         event.preventDefault();
         chooseSuggestion(index);
