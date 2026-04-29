@@ -8,6 +8,7 @@ const WIDGET_ROW_HEIGHT = 20;
 const TILE_FOOTER_HEIGHT = 45;
 
 const browserNodes = new Set();
+const loadPreviewNodes = new Set();
 let suggestionWidgets = ["version", "tag"];
 let browserModes = ["current", "latest only", "all versions"];
 let tagFilterModes = ["OR", "AND"];
@@ -18,6 +19,16 @@ let activeActionMenu = null;
 
 function isBrowserNode(node) {
   return node?.comfyClass === "BrowseGTST" || node?.type === "BrowseGTST";
+}
+
+function isAssetRefNode(node) {
+  return node?.comfyClass === "GTSTAssetRef" || node?.type === "GTSTAssetRef";
+}
+
+function isLoadPreviewNode(node) {
+  return ["LoadGTSTImage", "LoadGTSTVideo"].includes(
+    node?.comfyClass ?? node?.type
+  );
 }
 
 async function loadSchema() {
@@ -354,6 +365,40 @@ function ensureStyles() {
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+
+    .gtst-load-preview {
+      background: #191b1f;
+      border: 1px solid var(--border-color, #555);
+      border-radius: 6px;
+      box-sizing: border-box;
+      color: var(--input-text, #ddd);
+      display: flex;
+      flex-direction: column;
+      font: 12px sans-serif;
+      overflow: hidden;
+      padding: 8px;
+      position: fixed;
+      z-index: 20;
+    }
+
+    .gtst-load-preview-status {
+      color: #aeb7c2;
+      flex: 0 0 auto;
+      margin-bottom: 6px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .gtst-load-preview-body {
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+
+    .gtst-load-preview-tile {
+      cursor: default;
+      height: 100%;
+    }
   `;
   if (!style.parentElement) {
     document.head.appendChild(style);
@@ -425,6 +470,17 @@ function browserValues(node) {
   return Object.fromEntries(
     suggestionWidgets.map((name) => [name, widgetValue(node, name)])
   );
+}
+
+function linkedOriginNode(node, inputName = "asset_ref") {
+  const input = node?.inputs?.find((candidate) => candidate.name === inputName);
+  const linkId = input?.link;
+  const graph = node?.graph ?? app.graph;
+  const link = linkId != null ? graph?.links?.[linkId] : null;
+  if (!link) {
+    return null;
+  }
+  return graph?.getNodeById?.(link.origin_id) ?? null;
 }
 
 function splitTagValue(value) {
@@ -499,6 +555,20 @@ async function postJson(url, body) {
   });
   const payload = response.ok ? await response.json() : {};
   if (!response.ok || payload.ok === false) {
+    throw new Error(payload.error || `GTST request failed: ${response.status}`);
+  }
+  return payload;
+}
+
+async function previewAssetPayload(values, signal) {
+  const response = await api.fetchApi("/gtst/preview_asset", {
+    method: "POST",
+    body: JSON.stringify({ values }),
+    headers: { "Content-Type": "application/json" },
+    signal,
+  });
+  const payload = response.ok ? await response.json() : {};
+  if (!response.ok) {
     throw new Error(payload.error || `GTST request failed: ${response.status}`);
   }
   return payload;
@@ -701,6 +771,43 @@ function ensureOverlay(node) {
   return node.gtstBrowser;
 }
 
+function loadPreviewTop(node) {
+  const widgetBottoms = (node.widgets ?? []).map(
+    (widget, index) =>
+      (typeof widget.last_y === "number" ? widget.last_y : 24 + index * WIDGET_ROW_HEIGHT) +
+      WIDGET_ROW_HEIGHT
+  );
+  return Math.max(70, Math.max(0, ...widgetBottoms) + 10);
+}
+
+function ensureLoadPreviewOverlay(node) {
+  ensureStyles();
+  if (node.gtstLoadPreview?.element) {
+    return node.gtstLoadPreview;
+  }
+
+  const element = document.createElement("div");
+  element.className = "gtst-load-preview";
+
+  const status = document.createElement("div");
+  status.className = "gtst-load-preview-status";
+
+  const body = document.createElement("div");
+  body.className = "gtst-load-preview-body";
+
+  element.append(status, body);
+  document.body.appendChild(element);
+
+  node.gtstLoadPreview = {
+    element,
+    status,
+    body,
+    requestId: 0,
+    resultController: null,
+  };
+  return node.gtstLoadPreview;
+}
+
 function setResultStatus(node, text) {
   const state = ensureOverlay(node);
   state.resultStatus.textContent = text;
@@ -859,6 +966,22 @@ function renderGtstTileTags(item) {
   return row;
 }
 
+function renderGtstTileLabel(item) {
+  const label = document.createElement("div");
+  label.className = "gtst-browser-label";
+
+  const title = document.createElement("span");
+  title.className = "gtst-browser-title";
+  title.textContent = item.label ?? item.version ?? "GTST asset";
+
+  const tagRow = renderGtstTileTags(item);
+  label.append(title);
+  if (tagRow) {
+    label.append(tagRow);
+  }
+  return label;
+}
+
 function gtstItemTooltip(item) {
   const tags = item.tags?.length ? item.tags.join(", ") : "none";
   return [
@@ -868,6 +991,17 @@ function gtstItemTooltip(item) {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function renderGtstStandaloneTile(item, size) {
+  const tile = document.createElement("div");
+  tile.className = "gtst-browser-tile gtst-load-preview-tile";
+  tile.style.setProperty("--gtst-browser-preview-size", `${size}px`);
+  tile.style.setProperty("--gtst-browser-footer-size", `${TILE_FOOTER_HEIGHT}px`);
+  tile.dataset.path = item.file_path ?? "";
+  tile.title = gtstItemTooltip(item);
+  tile.append(renderGtstPreview(item), renderGtstTileLabel(item));
+  return tile;
 }
 
 function renderTile(node, item) {
@@ -887,18 +1021,7 @@ function renderTile(node, item) {
   menuButton.title = "GTST actions";
   menuButton.textContent = "⋯";
 
-  const label = document.createElement("div");
-  label.className = "gtst-browser-label";
-
-  const title = document.createElement("span");
-  title.className = "gtst-browser-title";
-  title.textContent = item.label ?? item.version ?? "GTST asset";
-
-  const tagRow = renderGtstTileTags(item);
-  label.append(title);
-  if (tagRow) {
-    label.append(tagRow);
-  }
+  const label = renderGtstTileLabel(item);
   button.append(renderGtstPreview(item), menuButton, label);
   button.addEventListener("click", () => {
     const nextValue = item.file_path === selectedPath(node) ? "" : item.file_path;
@@ -969,6 +1092,89 @@ function renderGrid(node) {
   state.items.scrollTop = scrollTop;
   updateTagSummary(node);
   updateSelectionStatus(node);
+}
+
+function loadPreviewValues(node) {
+  const upstream = linkedOriginNode(node);
+  if (!isAssetRefNode(upstream)) {
+    return null;
+  }
+  return browserValues(upstream);
+}
+
+function loadPreviewTileSize(node) {
+  const top = loadPreviewTop(node);
+  const width = Math.max(80, (node.size?.[0] ?? 240) - 32);
+  const height = Math.max(80, (node.size?.[1] ?? 260) - top - 54);
+  return Math.min(600, Math.max(80, Math.floor(Math.min(width, height))));
+}
+
+function renderLoadPreview(node, item) {
+  const state = ensureLoadPreviewOverlay(node);
+  state.body.replaceChildren(renderGtstStandaloneTile(item, loadPreviewTileSize(node)));
+}
+
+async function refreshLoadPreview(node) {
+  if (!isLoadPreviewNode(node)) {
+    return;
+  }
+  const state = ensureLoadPreviewOverlay(node);
+  const requestId = ++state.requestId;
+  state.resultController?.abort();
+  const controller = new AbortController();
+  state.resultController = controller;
+  state.status.textContent = "Loading preview...";
+
+  const values = loadPreviewValues(node);
+  if (!values) {
+    state.status.textContent = "Connect GTST Asset Ref";
+    state.body.replaceChildren();
+    if (state.resultController === controller) {
+      state.resultController = null;
+    }
+    return;
+  }
+
+  try {
+    const payload = await previewAssetPayload(values, controller.signal);
+    if (requestId !== state.requestId) {
+      return;
+    }
+    if (!payload.ok || !payload.item) {
+      state.status.textContent = payload.error || "No preview";
+      state.body.replaceChildren();
+      return;
+    }
+    state.status.textContent = payload.item.subtitle ?? "";
+    renderLoadPreview(node, payload.item);
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      return;
+    }
+    if (requestId !== state.requestId) {
+      return;
+    }
+    state.status.textContent = String(error);
+    state.body.replaceChildren();
+  } finally {
+    if (state.resultController === controller) {
+      state.resultController = null;
+    }
+  }
+}
+
+function scheduleRefreshLoadPreview(node) {
+  const state = ensureLoadPreviewOverlay(node);
+  window.clearTimeout(state.refreshTimer);
+  state.refreshTimer = window.setTimeout(() => {
+    refreshLoadPreview(node);
+  }, 0);
+}
+
+function scheduleRefreshAllLoadPreviews() {
+  for (const node of loadPreviewNodes) {
+    scheduleRefreshLoadPreview(node);
+  }
 }
 
 function updateGridSelection(node) {
@@ -1057,15 +1263,26 @@ function installExecutionRefresh() {
   api.addEventListener?.("executing", (event) => {
     if (event.detail === null || event.detail?.node === null) {
       scheduleRefreshAllBrowsers();
+      scheduleRefreshAllLoadPreviews();
     }
   });
-  api.addEventListener?.("execution_success", scheduleRefreshAllBrowsers);
-  api.addEventListener?.("execution_error", scheduleRefreshAllBrowsers);
-  api.addEventListener?.("execution_interrupted", scheduleRefreshAllBrowsers);
+  api.addEventListener?.("execution_success", () => {
+    scheduleRefreshAllBrowsers();
+    scheduleRefreshAllLoadPreviews();
+  });
+  api.addEventListener?.("execution_error", () => {
+    scheduleRefreshAllBrowsers();
+    scheduleRefreshAllLoadPreviews();
+  });
+  api.addEventListener?.("execution_interrupted", () => {
+    scheduleRefreshAllBrowsers();
+    scheduleRefreshAllLoadPreviews();
+  });
   api.addEventListener?.("status", (event) => {
     const remaining = Number(event.detail?.exec_info?.queue_remaining ?? 0);
     if (remaining === 0) {
       scheduleRefreshAllBrowsers();
+      scheduleRefreshAllLoadPreviews();
     }
   });
 }
@@ -1127,6 +1344,26 @@ function positionOverlay(node) {
   state.element.style.transformOrigin = "top left";
 }
 
+function positionLoadPreviewOverlay(node) {
+  const state = ensureLoadPreviewOverlay(node);
+  if (!node.graph || node.flags?.collapsed) {
+    state.element.style.display = "none";
+    return;
+  }
+
+  const top = loadPreviewTop(node);
+  const { x, y, scale } = graphToClient(node.pos[0] + 8, node.pos[1] + top);
+  const width = Math.max(120, (node.size?.[0] ?? 260) - 16);
+  const height = Math.max(120, (node.size?.[1] ?? 300) - top - 8);
+  state.element.style.display = "flex";
+  state.element.style.left = `${x}px`;
+  state.element.style.top = `${y}px`;
+  state.element.style.width = `${width}px`;
+  state.element.style.height = `${height}px`;
+  state.element.style.transform = `scale(${scale})`;
+  state.element.style.transformOrigin = "top left";
+}
+
 function startOverlayLoop() {
   if (animationStarted) {
     return;
@@ -1136,6 +1373,9 @@ function startOverlayLoop() {
   const tick = () => {
     for (const node of browserNodes) {
       positionOverlay(node);
+    }
+    for (const node of loadPreviewNodes) {
+      positionLoadPreviewOverlay(node);
     }
     window.requestAnimationFrame(tick);
   };
@@ -1214,6 +1454,15 @@ window.addEventListener("gtst:browser-input-committed", (event) => {
   }
 });
 
+window.addEventListener("gtst:asset-ref-input-committed", (event) => {
+  const node = event.detail?.node;
+  for (const loadNode of loadPreviewNodes) {
+    if (linkedOriginNode(loadNode) === node) {
+      scheduleRefreshLoadPreview(loadNode);
+    }
+  }
+});
+
 app.registerExtension({
   name: "gtst.browserGrid",
 
@@ -1227,7 +1476,39 @@ app.registerExtension({
 
   async beforeRegisterNodeDef(nodeType, nodeData) {
     await loadSchema();
-    if (nodeData.name !== "BrowseGTST") {
+    if (nodeData.name === "BrowseGTST") {
+      const originalOnNodeCreated = nodeType.prototype.onNodeCreated;
+      nodeType.prototype.onNodeCreated = function () {
+        originalOnNodeCreated?.apply(this, arguments);
+        this.size = [
+          Math.max(this.size?.[0] ?? 0, DEFAULT_NODE_SIZE[0]),
+          Math.max(this.size?.[1] ?? 0, DEFAULT_NODE_SIZE[1]),
+        ];
+        browserNodes.add(this);
+        ensureOverlay(this);
+        wrapBrowserWidgets(this);
+        scheduleRefreshBrowser(this);
+      };
+
+      const originalOnConfigure = nodeType.prototype.onConfigure;
+      nodeType.prototype.onConfigure = function () {
+        const result = originalOnConfigure?.apply(this, arguments);
+        browserNodes.add(this);
+        ensureOverlay(this);
+        scheduleRefreshBrowser(this);
+        return result;
+      };
+
+      const originalOnRemoved = nodeType.prototype.onRemoved;
+      nodeType.prototype.onRemoved = function () {
+        browserNodes.delete(this);
+        this.gtstBrowser?.element?.remove();
+        return originalOnRemoved?.apply(this, arguments);
+      };
+      return;
+    }
+
+    if (!["LoadGTSTImage", "LoadGTSTVideo"].includes(nodeData.name)) {
       return;
     }
 
@@ -1235,28 +1516,34 @@ app.registerExtension({
     nodeType.prototype.onNodeCreated = function () {
       originalOnNodeCreated?.apply(this, arguments);
       this.size = [
-        Math.max(this.size?.[0] ?? 0, DEFAULT_NODE_SIZE[0]),
-        Math.max(this.size?.[1] ?? 0, DEFAULT_NODE_SIZE[1]),
+        Math.max(this.size?.[0] ?? 0, 260),
+        Math.max(this.size?.[1] ?? 0, 320),
       ];
-      browserNodes.add(this);
-      ensureOverlay(this);
-      wrapBrowserWidgets(this);
-      scheduleRefreshBrowser(this);
+      loadPreviewNodes.add(this);
+      ensureLoadPreviewOverlay(this);
+      scheduleRefreshLoadPreview(this);
     };
 
     const originalOnConfigure = nodeType.prototype.onConfigure;
     nodeType.prototype.onConfigure = function () {
       const result = originalOnConfigure?.apply(this, arguments);
-      browserNodes.add(this);
-      ensureOverlay(this);
-      scheduleRefreshBrowser(this);
+      loadPreviewNodes.add(this);
+      ensureLoadPreviewOverlay(this);
+      scheduleRefreshLoadPreview(this);
+      return result;
+    };
+
+    const originalOnConnectionsChange = nodeType.prototype.onConnectionsChange;
+    nodeType.prototype.onConnectionsChange = function () {
+      const result = originalOnConnectionsChange?.apply(this, arguments);
+      scheduleRefreshLoadPreview(this);
       return result;
     };
 
     const originalOnRemoved = nodeType.prototype.onRemoved;
     nodeType.prototype.onRemoved = function () {
-      browserNodes.delete(this);
-      this.gtstBrowser?.element?.remove();
+      loadPreviewNodes.delete(this);
+      this.gtstLoadPreview?.element?.remove();
       return originalOnRemoved?.apply(this, arguments);
     };
   },

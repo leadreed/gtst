@@ -139,14 +139,18 @@ function setWidgetValue(widget, value, node) {
 }
 
 function notifyCommitted(node, field) {
-  if (!isBrowserNode(node)) {
-    return;
-  }
   window.dispatchEvent(
-    new CustomEvent("gtst:browser-input-committed", {
+    new CustomEvent("gtst:asset-ref-input-committed", {
       detail: { node, field },
     })
   );
+  if (isBrowserNode(node)) {
+    window.dispatchEvent(
+      new CustomEvent("gtst:browser-input-committed", {
+        detail: { node, field },
+      })
+    );
+  }
 }
 
 function valuesForNode(node) {
