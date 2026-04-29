@@ -1,5 +1,12 @@
 # Agent Notes
 
+## Search
+
+- Use the local ripgrep binary for repo searches:
+  `& 'F:\tools\ripgrep\rg.exe' ...`
+- Do not use the bundled Codex `rg` on this machine; it may fail with
+  `Access is denied`.
+
 ## Testing
 
 - Use the ComfyUI venv for this plugin:

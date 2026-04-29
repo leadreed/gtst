@@ -127,6 +127,14 @@ def test_asset_ref_resolve_has_no_preview_ui(
     assert result["result"][1] == ""
 
 
+def test_load_node_is_changed_tolerates_connected_asset_ref_placeholder() -> None:
+    expected = json.dumps({"asset_ref": "unavailable"}, sort_keys=True)
+
+    assert NODE_CLASS_MAPPINGS["LoadGTSTImage"].IS_CHANGED(None) == expected
+    assert LoadGtstText.IS_CHANGED(None) == expected
+    assert LoadGtstVideo.IS_CHANGED(None) == expected
+
+
 def test_asset_ref_missing_explicit_version_errors(
     tmp_path: Path, monkeypatch: Any
 ) -> None:

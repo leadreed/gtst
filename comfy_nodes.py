@@ -197,6 +197,12 @@ def _change_signature_for_ref(asset_ref: dict[str, Any]) -> str:
     )
 
 
+def _change_signature_for_optional_ref(asset_ref: dict[str, Any] | None) -> str:
+    if not isinstance(asset_ref, dict):
+        return json.dumps({"asset_ref": "unavailable"}, sort_keys=True)
+    return _change_signature_for_ref(asset_ref)
+
+
 def _facet_options() -> dict[str, list[str]]:
     fields = _input_schema()
     options = {field: [] for field in fields}
@@ -1033,7 +1039,7 @@ class LoadGtstImage:
 
     @classmethod
     def IS_CHANGED(cls, asset_ref: dict[str, Any]) -> str:
-        return _change_signature_for_ref(asset_ref)
+        return _change_signature_for_optional_ref(asset_ref)
 
     def load(self, asset_ref: dict[str, Any]) -> dict[str, Any]:
         root = _ref_root(asset_ref)
@@ -1108,7 +1114,7 @@ class LoadGtstText:
 
     @classmethod
     def IS_CHANGED(cls, asset_ref: dict[str, Any]) -> str:
-        return _change_signature_for_ref(asset_ref)
+        return _change_signature_for_optional_ref(asset_ref)
 
     def load(self, asset_ref: dict[str, Any]) -> tuple[str, str, str]:
         root = _ref_root(asset_ref)
@@ -1186,7 +1192,7 @@ class LoadGtstVideo:
 
     @classmethod
     def IS_CHANGED(cls, asset_ref: dict[str, Any]) -> str:
-        return _change_signature_for_ref(asset_ref)
+        return _change_signature_for_optional_ref(asset_ref)
 
     def load(self, asset_ref: dict[str, Any]) -> dict[str, Any]:
         root = _ref_root(asset_ref)
