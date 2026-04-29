@@ -308,7 +308,9 @@ function hideMenu() {
   menuValues = [];
   highlightedIndex = 0;
   requestId += 1;
-  menuElement().style.display = "none";
+  const menu = menuElement();
+  menu.style.display = "none";
+  menu.replaceChildren();
 }
 
 function clearActive() {
