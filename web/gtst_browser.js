@@ -10,6 +10,7 @@ const LOAD_PREVIEW_MIN_SIZE = [360, 380];
 const LOAD_PREVIEW_INSET = 8;
 const LOAD_PREVIEW_COMPACT_SIZE = [120, 90];
 const BYPASS_MODE = 4;
+const NODE_OVERLAP_EPSILON = 1;
 
 const browserNodes = new Set();
 const loadPreviewNodes = new Set();
@@ -57,6 +58,68 @@ function isNodeMutedOrBypassed(node) {
 
 function syncNodeDisabledState(element, node) {
   element.dataset.nodeDisabled = String(isNodeMutedOrBypassed(node));
+}
+
+function rectsOverlap(a, b) {
+  return (
+    a.x < b.x + b.width - NODE_OVERLAP_EPSILON &&
+    a.x + a.width > b.x + NODE_OVERLAP_EPSILON &&
+    a.y < b.y + b.height - NODE_OVERLAP_EPSILON &&
+    a.y + a.height > b.y + NODE_OVERLAP_EPSILON
+  );
+}
+
+function nodeGraphRect(node) {
+  const size = node?.size ?? [0, 0];
+  return {
+    x: Number(node?.pos?.[0] ?? 0),
+    y: Number(node?.pos?.[1] ?? 0),
+    width: Number(size[0] ?? 0),
+    height: Number(size[1] ?? 0),
+  };
+}
+
+function graphNodes(node) {
+  const graph = node?.graph ?? app.graph;
+  return Array.isArray(graph?._nodes) ? graph._nodes : [];
+}
+
+function isCanvasSelectedNode(node) {
+  const selected = app.canvas?.selected_nodes;
+  return Boolean(
+    node &&
+      selected &&
+      (selected[node.id] === node || selected[String(node.id)] === node)
+  );
+}
+
+function isNodeDrawnAbove(node, candidate) {
+  if (isCanvasSelectedNode(candidate) && !isCanvasSelectedNode(node)) {
+    return true;
+  }
+  const nodes = graphNodes(node);
+  const nodeIndex = nodes.indexOf(node);
+  const candidateIndex = nodes.indexOf(candidate);
+  return nodeIndex >= 0 && candidateIndex > nodeIndex;
+}
+
+function isOverlayOccludedByUpperNode(node, overlayRect) {
+  return graphNodes(node).some((candidate) => {
+    if (
+      candidate === node ||
+      !candidate ||
+      candidate.graph !== node.graph ||
+      candidate.flags?.collapsed ||
+      !isNodeDrawnAbove(node, candidate)
+    ) {
+      return false;
+    }
+    return rectsOverlap(overlayRect, nodeGraphRect(candidate));
+  });
+}
+
+function syncOverlayOcclusion(element, node, overlayRect) {
+  element.dataset.occluded = String(isOverlayOccludedByUpperNode(node, overlayRect));
 }
 
 async function loadSchema() {
@@ -413,6 +476,12 @@ function ensureStyles() {
       padding: 8px;
       position: fixed;
       z-index: 20;
+    }
+
+    .gtst-browser-grid[data-occluded="true"],
+    .gtst-load-preview[data-occluded="true"] {
+      pointer-events: none;
+      visibility: hidden;
     }
 
     .gtst-load-preview-status {
@@ -1493,6 +1562,7 @@ function positionOverlay(node) {
   syncNodeDisabledState(state.element, node);
   if (!node.graph || node.flags?.collapsed) {
     state.element.style.display = "none";
+    state.element.dataset.occluded = "false";
     return;
   }
 
@@ -1500,6 +1570,12 @@ function positionOverlay(node) {
   const { x, y, scale } = graphToClient(node.pos[0] + 8, node.pos[1] + top);
   const width = Math.max(120, (node.size?.[0] ?? DEFAULT_NODE_SIZE[0]) - 16);
   const height = Math.max(120, (node.size?.[1] ?? DEFAULT_NODE_SIZE[1]) - top - 8);
+  const overlayRect = {
+    x: node.pos[0] + 8,
+    y: node.pos[1] + top,
+    width,
+    height,
+  };
   state.element.style.display = "flex";
   state.element.style.left = `${x}px`;
   state.element.style.top = `${y}px`;
@@ -1507,6 +1583,7 @@ function positionOverlay(node) {
   state.element.style.height = `${height}px`;
   state.element.style.transform = `scale(${scale})`;
   state.element.style.transformOrigin = "top left";
+  syncOverlayOcclusion(state.element, node, overlayRect);
 }
 
 function positionLoadPreviewOverlay(node) {
@@ -1514,6 +1591,7 @@ function positionLoadPreviewOverlay(node) {
   syncNodeDisabledState(state.element, node);
   if (!node.graph || node.flags?.collapsed) {
     state.element.style.display = "none";
+    state.element.dataset.occluded = "false";
     return;
   }
 
@@ -1523,6 +1601,12 @@ function positionLoadPreviewOverlay(node) {
     node.pos[1] + top
   );
   const { width, height } = loadPreviewPanelSize(node);
+  const overlayRect = {
+    x: node.pos[0] + LOAD_PREVIEW_INSET,
+    y: node.pos[1] + top,
+    width,
+    height,
+  };
   state.element.style.display = "flex";
   state.element.style.left = `${x}px`;
   state.element.style.top = `${y}px`;
@@ -1530,6 +1614,7 @@ function positionLoadPreviewOverlay(node) {
   state.element.style.height = `${height}px`;
   state.element.style.transform = `scale(${scale})`;
   state.element.style.transformOrigin = "top left";
+  syncOverlayOcclusion(state.element, node, overlayRect);
   syncLoadPreviewCompactMode(node);
 }
 
