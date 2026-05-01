@@ -79,6 +79,7 @@ class GtstRoot:
         source: str | Path,
         *,
         facets: dict[str, str] | None = None,
+        filename_override: str | None = None,
         **facet_values: str,
     ) -> str:
         source_path = Path(source).expanduser().resolve()
@@ -88,14 +89,24 @@ class GtstRoot:
             raise GtstPublishError(f"Source path is not a file: {source_path}")
 
         with self._lock():
-            asset_dir = self.asset_dir(facets=facets, **facet_values)
+            merged_facets = self._merge_facets(
+                facets, facet_values, require_complete=True
+            )
+            asset_dir = self.asset_dir(facets=merged_facets)
             asset_dir.mkdir(parents=True, exist_ok=True)
             next_number = self._latest_version_number(asset_dir) + 1
-            version_dir = asset_dir / self._format_version(next_number)
+            version_name = self._format_version(next_number)
+            version_dir = asset_dir / version_name
             if version_dir.exists():
                 raise GtstPublishError(f"Version folder already exists: {version_dir}")
             version_dir.mkdir()
-            destination = version_dir / source_path.name
+            filename = self._publish_filename(
+                source_path=source_path,
+                facets=merged_facets,
+                version_name=version_name,
+                filename_override=filename_override,
+            )
+            destination = version_dir / filename
             if destination.exists():
                 raise GtstPublishError(f"Destination file already exists: {destination}")
             shutil.copy2(source_path, destination)
@@ -353,6 +364,29 @@ class GtstRoot:
 
     def _lock(self) -> FileLock:
         return FileLock(self.path / "gtst.lock")
+
+    def _publish_filename(
+        self,
+        *,
+        source_path: Path,
+        facets: dict[str, str],
+        version_name: str,
+        filename_override: str | None,
+    ) -> str:
+        if filename_override is not None:
+            filename = filename_override.strip()
+            validate_name(filename, label="filename override")
+            if not Path(filename).suffix:
+                filename = f"{filename}{source_path.suffix}"
+            return filename
+
+        facet = self.config.default_filename_facet
+        value = facets.get(facet, "").strip()
+        if not value:
+            raise GtstPublishError(
+                f"Default filename facet '{facet}' is missing or empty for this asset."
+            )
+        return f"{value}_{version_name}{source_path.suffix}"
 
     def _version_numbers(self, asset_dir: Path) -> list[int]:
         if not asset_dir.is_dir():

@@ -179,23 +179,47 @@ def test_config_default_filename_facet_must_be_in_schema(tmp_path: Path) -> None
         GtstRoot(root_path)
 
 
-def test_publish_allocates_versions_and_preserves_filename(tmp_path: Path) -> None:
+def test_publish_allocates_versions_and_uses_default_filename_facet(
+    tmp_path: Path,
+) -> None:
     root = GtstRoot.create(tmp_path / "root")
-    source = write_source(tmp_path, "simpleBox.txt", "v1")
+    source = write_source(tmp_path, "temporary.txt", "v1")
 
     first = root.publish(source, facets=facets())
     source.write_text("v2", encoding="utf-8")
     second = root.publish(source, **facets())
 
     assert path_endswith(
-        first, "/project1/assets/simpleBox/base/default/v001/simpleBox.txt"
+        first, "/project1/assets/simpleBox/base/default/v001/simpleBox_v001.txt"
     )
     assert path_endswith(
-        second, "/project1/assets/simpleBox/base/default/v002/simpleBox.txt"
+        second, "/project1/assets/simpleBox/base/default/v002/simpleBox_v002.txt"
     )
     assert Path(first).read_text(encoding="utf-8") == "v1"
     assert Path(second).read_text(encoding="utf-8") == "v2"
     assert root.list_versions(**facets()) == ["v001", "v002"]
+
+
+def test_publish_filename_override_preserves_custom_name(tmp_path: Path) -> None:
+    root = GtstRoot.create(tmp_path / "root")
+    source = write_source(tmp_path, "temporary.txt", "v1")
+
+    bare = root.publish(source, facets=facets(), filename_override="custom")
+    source.write_text("v2", encoding="utf-8")
+    suffixed = root.publish(source, facets=facets(), filename_override="custom.md")
+
+    assert path_endswith(bare, "/project1/assets/simpleBox/base/default/v001/custom.txt")
+    assert path_endswith(
+        suffixed, "/project1/assets/simpleBox/base/default/v002/custom.md"
+    )
+
+
+def test_publish_rejects_invalid_filename_override(tmp_path: Path) -> None:
+    root = GtstRoot.create(tmp_path / "root")
+    source = write_source(tmp_path)
+
+    with pytest.raises(GtstPathError, match="filename override"):
+        root.publish(source, facets=facets(), filename_override="bad/name.txt")
 
 
 def test_publish_rejects_non_file_source(tmp_path: Path) -> None:
@@ -345,7 +369,7 @@ def test_custom_config_version_width_and_schema(tmp_path: Path) -> None:
     source = write_source(tmp_path)
     first = root.publish(source, project="p", asset="a")
 
-    assert path_endswith(first, "/p/a/v0001/simpleBox.txt")
+    assert path_endswith(first, "/p/a/v0001/a_v0001.txt")
     tag = root.tag_version("approved", version=1, project="p", asset="a")
     assert path_endswith(tag, "/gtst_tags/approved/gtstTag0001_approved_0001.gtst")
 
@@ -421,7 +445,7 @@ def test_cli_publish_ready_get_values_and_info_json(
     )
     published = capsys.readouterr().out.strip()
     assert path_endswith(
-        published, "/project1/assets/hero/base/default/v001/hero.txt"
+        published, "/project1/assets/hero/base/default/v001/hero_v001.txt"
     )
 
     assert cli_main(["get", "project1/assets/hero/base/default/v1"]) == 0
