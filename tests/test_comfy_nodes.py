@@ -31,7 +31,7 @@ from comfy_nodes import (
     selected_browser_asset,
     set_ready_payload,
 )
-from gtst import GtstRoot
+from gtst import GtstPathError, GtstRoot
 
 
 def path_endswith(path: str, suffix: str) -> bool:
@@ -228,6 +228,12 @@ def test_text_nodes_asset_ref_tag_and_ready(
     assert second_ref["version"] == "v002"
     assert "ui" not in first_result
     assert "ui" not in second_result
+    assert path_endswith(
+        first, "/project1/prompts/heroPrompt/base/default/v001/prompt.txt"
+    )
+    assert path_endswith(
+        second, "/project1/prompts/heroPrompt/base/default/v002/prompt.txt"
+    )
     assert Path(first).read_text(encoding="utf-8") == "first prompt"
     assert Path(second).read_text(encoding="utf-8") == "second prompt"
     assert json.loads(first_metadata)["version"] == "v001"
@@ -348,7 +354,7 @@ def test_load_image_has_no_native_preview_ui(
     result = LoadGtstImage().load(asset_ref)
 
     assert "ui" not in result
-    assert result["result"][2].endswith("hero.png")
+    assert result["result"][2].endswith("hero_v001.png")
 
 
 def test_load_image_rejects_non_image_asset(
@@ -386,7 +392,10 @@ def test_video_nodes_publish_and_load_video(tmp_path: Path, monkeypatch: Any) ->
     assert result["ui"]["animated"] == (True,)
     assert result["ui"]["images"][0]["type"] == "temp"
     assert video.saved_path is not None
-    assert video.saved_path.endswith("shot01.mp4")
+    assert video.saved_path.endswith("source.mp4")
+    assert path_endswith(
+        published, "/project1/videos/shot01/base/default/v001/shot01_v001.mp4"
+    )
     assert video.saved_format == "mp4"
     assert video.saved_codec == "h264"
     assert video.saved_metadata == {"workflow": {"nodes": []}, "prompt": prompt}
@@ -990,7 +999,7 @@ def test_nodes_use_custom_schema_exact_field_names(
     result = SaveGtstText().save("plate notes", asset_ref, "", False, "")
     published = result["result"][1]
 
-    assert path_endswith(published, "/demo/shot010/plateMain/v001/plateMain.txt")
+    assert path_endswith(published, "/demo/shot010/plateMain/v001/plateMain_v001.txt")
     assert json.loads(result["result"][2])["facets"] == {
         "show": "demo",
         "shot": "shot010",
@@ -1037,5 +1046,5 @@ def test_default_filename_facet_errors_when_unresolved(
         "metadata": {},
     }
 
-    with pytest.raises(ValueError, match="Default filename facet"):
+    with pytest.raises(GtstPathError, match="facet 'name'"):
         SaveGtstText().save("plate notes", asset_ref, "", False, "")

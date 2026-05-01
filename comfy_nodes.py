@@ -872,8 +872,13 @@ def _publish_existing_file(
     facets: dict[str, str],
     mark_ready: bool,
     tags: str = "",
+    filename_override: str | None = None,
 ) -> str:
-    published = root.publish(source_path, facets=facets)
+    published = root.publish(
+        source_path,
+        facets=facets,
+        filename_override=filename_override,
+    )
     version = root.version_from_path(published)
     if mark_ready:
         root.tag_version(root.config.ready_tag_name, version=version, facets=facets)
@@ -958,26 +963,9 @@ def _comfy_metadata(prompt: Any, extra_pnginfo: Any) -> dict[str, Any] | None:
     return metadata or None
 
 
-def _filename_with_extension(name: str, extension: str) -> str:
-    if Path(name).suffix:
-        return name
-    return f"{name}{extension}"
-
-
-def _default_filename(
-    root: GtstRoot, facets: dict[str, str], file_name: str, extension: str
-) -> str:
-    stripped = file_name.strip()
-    if stripped:
-        return _filename_with_extension(stripped, extension)
-
-    facet = root.config.default_filename_facet
-    value = str(facets.get(facet, "")).strip()
-    if not value:
-        raise ValueError(
-            f"Default filename facet '{facet}' is missing or empty for this asset."
-        )
-    return _filename_with_extension(value, extension)
+def _temp_source_name(file_name: str, extension: str) -> str:
+    override_suffix = Path(file_name.strip()).suffix
+    return f"source{override_suffix or extension}"
 
 
 def _output(result: tuple[Any, ...], ui: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -1181,11 +1169,19 @@ class SaveGtstImage:
     ) -> dict[str, Any]:
         root = _ref_root(asset_ref)
         facets = _ref_facets(asset_ref)
-        name = _default_filename(root, facets, file_name, DEFAULT_IMAGE_EXTENSION)
+        filename_override = file_name.strip() or None
+        name = _temp_source_name(file_name, DEFAULT_IMAGE_EXTENSION)
         with tempfile.TemporaryDirectory() as temp_dir:
             source = Path(temp_dir) / name
             _save_image_tensor(image, source)
-            published = _publish_existing_file(root, str(source), facets, mark_ready, tags)
+            published = _publish_existing_file(
+                root,
+                str(source),
+                facets,
+                mark_ready,
+                tags,
+                filename_override=filename_override,
+            )
         result = (
             _asset_ref(root, facets, file_path=published),
             published,
@@ -1258,11 +1254,19 @@ class SaveGtstText:
     ) -> dict[str, Any]:
         root = _ref_root(asset_ref)
         facets = _ref_facets(asset_ref)
-        name = _default_filename(root, facets, file_name, DEFAULT_TEXT_EXTENSION)
+        filename_override = file_name.strip() or None
+        name = _temp_source_name(file_name, DEFAULT_TEXT_EXTENSION)
         with tempfile.TemporaryDirectory() as temp_dir:
             source = Path(temp_dir) / name
             source.write_text(text, encoding="utf-8")
-            published = _publish_existing_file(root, str(source), facets, mark_ready, tags)
+            published = _publish_existing_file(
+                root,
+                str(source),
+                facets,
+                mark_ready,
+                tags,
+                filename_override=filename_override,
+            )
         result = (
             _asset_ref(root, facets, file_path=published),
             published,
@@ -1348,7 +1352,8 @@ class SaveGtstVideo:
         root = _ref_root(asset_ref)
         facets = _ref_facets(asset_ref)
         extension = _video_extension(format)
-        name = _default_filename(root, facets, file_name, extension)
+        filename_override = file_name.strip() or None
+        name = _temp_source_name(file_name, extension)
         with tempfile.TemporaryDirectory() as temp_dir:
             source = Path(temp_dir) / name
             video.save_to(
@@ -1357,7 +1362,14 @@ class SaveGtstVideo:
                 codec=codec,
                 metadata=_comfy_metadata(prompt, extra_pnginfo),
             )
-            published = _publish_existing_file(root, str(source), facets, mark_ready, tags)
+            published = _publish_existing_file(
+                root,
+                str(source),
+                facets,
+                mark_ready,
+                tags,
+                filename_override=filename_override,
+            )
         result = (
             _asset_ref(root, facets, file_path=published),
             published,
