@@ -81,14 +81,14 @@ Mark an existing version ready:
 
 ```bash
 gtst ready project1/assets/hero/base/default/v001
-gtst ready /path/to/myGTSTroot/project1/assets/hero/base/default/v001/hero.png
+gtst ready /path/to/myGTSTroot/project1/assets/hero/base/default/v001/hero_v001.png
 ```
 
 Tag an existing version:
 
 ```bash
 gtst tag favorite project1/assets/hero/base/default/v001
-gtst tag favorite /path/to/myGTSTroot/project1/assets/hero/base/default/v001/hero.png
+gtst tag favorite /path/to/myGTSTroot/project1/assets/hero/base/default/v001/hero_v001.png
 ```
 
 Get the latest version carrying a tag:
@@ -117,7 +117,7 @@ Show information for an asset, version, or file:
 ```bash
 gtst info project1/assets/hero/base/default
 gtst info project1/assets/hero/base/default/v001
-gtst info /path/to/myGTSTroot/project1/assets/hero/base/default/v001/hero.png
+gtst info /path/to/myGTSTroot/project1/assets/hero/base/default/v001/hero_v001.png
 gtst info --json project1/assets/hero/base/default
 ```
 
@@ -157,9 +157,9 @@ myGTSTroot/
         base/
           default/
             v001/
-              simpleBox.txt
+              simpleBox_v001.txt
             v002/
-              simpleBox.txt
+              simpleBox_v002.txt
             gtst_tags/
               ready/
                 gtstTag001_ready_001.gtst
@@ -206,8 +206,9 @@ Multi-version tags do not need to be configured.
 ```
 
 The version width controls folder names such as `v001`.
-The default filename facet controls the filename stem used by ComfyUI save nodes
-when their `file_name` input is empty. It must name a field in `schema`.
+The default filename facet controls the filename stem used by `publish` when no
+`filename_override` is provided. Default filenames include the allocated version,
+such as `simpleBox_v001.txt`. It must name a field in `schema`.
 
 All config fields shown above are required. Older or hand-written config files
 that omit one of these fields fail to load.
@@ -240,6 +241,8 @@ latest = root.get_latest(
 ```
 
 Both `published` and `latest` are absolute filesystem paths to the asset file.
+With the default config, the published file above is named
+`simpleBox_v001.txt`.
 
 Create or open a specific root explicitly when setting up a root, writing tests,
 or intentionally bypassing the active root:
@@ -261,6 +264,14 @@ facets = {
 }
 
 root.publish(source="/tmp/simpleBox.txt", facets=facets)
+```
+
+Pass `filename_override` to use an explicit saved filename. If the override has
+no extension, GTST adds the source file's extension:
+
+```python
+root.publish(source="/tmp/simpleBox.txt", facets=facets, filename_override="custom")
+# .../v001/custom.txt
 ```
 
 Resolve the current asset file, preferring ready and falling back to latest:
@@ -298,21 +309,25 @@ Available nodes:
   image preview.
 - `Save GTST Image`: save a ComfyUI image as a new GTST version, optionally
   marking it ready and adding tags. If `file_name` is empty, the configured
-  default filename facet is used. This is an output node and shows an image
-  preview.
+  default filename facet is used with the allocated version suffix. If
+  `file_name` is set, it is passed as `filename_override`. This is an output node
+  and shows an image preview.
 - `Load GTST Text`: load a GTST text asset as a string.
 - `Save GTST Text`: save text as a new GTST version for prompts, captions,
   JSON, notes, or metadata. If `file_name` is empty, the configured default
-  filename facet is used. This is an output node and also returns the saved text
-  as a normal output for downstream text preview/debug nodes.
+  filename facet is used with the allocated version suffix. If `file_name` is
+  set, it is passed as `filename_override`. This is an output node and also
+  returns the saved text as a normal output for downstream text preview/debug
+  nodes.
 - `Load GTST Video`: load a GTST video asset as a ComfyUI `VIDEO`, and output
   the video file path and metadata JSON. Video previews are handled by GTST's
   custom preview system.
 - `Save GTST Video`: save a ComfyUI `VIDEO` as a new GTST version, using
   `format` and `codec` controls like ComfyUI's built-in Save Video node. If
   `file_name` is empty, the configured default filename facet is used with the
-  selected video format's extension. This is an output node and shows a video
-  preview.
+  allocated version suffix and selected video format's extension. If `file_name`
+  is set, it is passed as `filename_override`. This is an output node and shows
+  a video preview.
 - `Mark GTST Ready`: mark a specific version as the ready version for an asset.
   This is an output node.
 - `Tag GTST Version`: add a custom tag to a specific version. This is an output
@@ -385,7 +400,7 @@ Multi-version tags are stored inside each version folder:
 
 ```text
 v001/
-  simpleBox.txt
+  simpleBox_v001.txt
   gtst_tags/
     favorite.gtst
 ```
@@ -393,7 +408,8 @@ v001/
 ## Design Notes
 
 - GTST publishes one file per version.
-- Publish preserves the source filename.
+- Publish uses the configured default filename facet plus version by default,
+  and preserves explicit `filename_override` values.
 - Publish never overwrites existing version folders or files.
 - Malformed version folders are ignored.
 - Retrieval returns an error if the requested version folder has zero asset files
