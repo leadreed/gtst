@@ -3,6 +3,7 @@ import { app } from "../../scripts/app.js";
 
 const STYLE_ID = "gtst-facet-autocomplete-style";
 const DEBOUNCE_MS = 150;
+const SUGGESTION_DISPLAY_LIMIT = 50;
 const WIDGET_ROW_HEIGHT = 20;
 
 let facetWidgets = [];
@@ -11,6 +12,7 @@ let schemaPromise = null;
 let active = null;
 let highlightedIndex = 0;
 let menuValues = [];
+let menuHasMore = false;
 let requestId = 0;
 let debounceTimer = null;
 let widgetClickWrapped = false;
@@ -136,6 +138,29 @@ function setWidgetValue(widget, value, node) {
   widget.value = value;
   widget.callback?.(value, app.canvas, node, app.canvas?.graph_mouse, {});
   node?.setDirtyCanvas?.(true, true);
+}
+
+function clearsQueryOnOpen(field) {
+  return field !== "tag";
+}
+
+function restoreActiveValue() {
+  if (!active) {
+    return;
+  }
+  const value = active.originalValue ?? "";
+  if (active.input instanceof HTMLInputElement) {
+    active.input.value = value;
+  }
+  setWidgetValue(active.widget, value, active.node);
+}
+
+function cancelActiveEdit() {
+  if (!active) {
+    return;
+  }
+  active.cancelled = true;
+  restoreActiveValue();
 }
 
 function notifyCommitted(node, field) {
@@ -315,6 +340,7 @@ function positionMenu() {
 function hideMenu() {
   window.clearTimeout(debounceTimer);
   menuValues = [];
+  menuHasMore = false;
   highlightedIndex = 0;
   requestId += 1;
   const menu = menuElement();
@@ -357,7 +383,16 @@ function renderMenu(values) {
         chooseSuggestion(index);
       });
       return item;
-    })
+    }),
+    ...(menuHasMore
+      ? [
+          Object.assign(document.createElement("button"), {
+            disabled: true,
+            textContent: "Type to narrow...",
+            type: "button",
+          }),
+        ]
+      : [])
   );
 
   if (!values.length) {
@@ -390,7 +425,9 @@ async function refreshSuggestions(immediate = false) {
     ) {
       return;
     }
-    menuValues = startsWithFilter(values, activeQuery());
+    const filteredValues = startsWithFilter(values, activeQuery());
+    menuHasMore = filteredValues.length > SUGGESTION_DISPLAY_LIMIT;
+    menuValues = filteredValues.slice(0, SUGGESTION_DISPLAY_LIMIT);
     highlightedIndex = 0;
     renderMenu(menuValues);
   };
@@ -462,12 +499,24 @@ function candidateNodeForField(field) {
   return null;
 }
 
-function activateFacet(node, field) {
+function activateFacet(node, field, input = null) {
   const widget = node?.widgets?.find((candidate) => candidate.name === field);
   if (!widget) {
     return false;
   }
-  active = { node, widget, field, promptToken };
+  active = {
+    node,
+    widget,
+    field,
+    promptToken,
+    originalValue: String(widget.value ?? ""),
+  };
+  if (input instanceof HTMLInputElement) {
+    active.input = input;
+    if (clearsQueryOnOpen(field)) {
+      input.value = "";
+    }
+  }
   hideMenu();
   refreshSuggestions(true);
   return true;
@@ -476,7 +525,13 @@ function activateFacet(node, field) {
 function setPendingPrompt(node, widget) {
   if (isSuggestionNode(node) && isSuggestionWidget(widget)) {
     promptToken += 1;
-    active = { node, widget, field: widget.name, promptToken };
+    active = {
+      node,
+      widget,
+      field: widget.name,
+      promptToken,
+      originalValue: String(widget.value ?? ""),
+    };
     return;
   }
   clearActive();
@@ -487,6 +542,11 @@ async function commitFacet(node, field) {
   const start = facetWidgets.indexOf(field) + 1;
   if (start <= 0) {
     return;
+  }
+
+  const version = node.widgets?.find((candidate) => candidate.name === "version");
+  if (version && String(version.value ?? "")) {
+    setWidgetValue(version, "", node);
   }
 
   for (const laterField of facetWidgets.slice(start)) {
@@ -534,9 +594,7 @@ function installDocumentListeners() {
       return;
     }
     const node = candidateNodeForField(field);
-    if (node && activateFacet(node, field)) {
-      active.input = event.target;
-    }
+    activateFacet(node, field, event.target);
   });
 
   document.addEventListener("input", (event) => {
@@ -546,11 +604,12 @@ function installDocumentListeners() {
     }
     if (!active || active.field !== field) {
       const node = candidateNodeForField(field);
-      if (!node || !activateFacet(node, field)) {
+      if (!node || !activateFacet(node, field, event.target)) {
         return;
       }
     }
     active.input = event.target;
+    active.cancelled = false;
     if (event.target.getAttribute("aria-label")) {
       setWidgetValue(active.widget, event.target.value, active.node);
     }
@@ -564,6 +623,7 @@ function installDocumentListeners() {
     }
 
     if (event.key === "Escape") {
+      cancelActiveEdit();
       hideMenu();
       return;
     }
@@ -596,6 +656,10 @@ function installDocumentListeners() {
     }
     const committed = active;
     window.setTimeout(() => {
+      if (committed.cancelled) {
+        hideMenu();
+        return;
+      }
       if (committed.input instanceof HTMLInputElement) {
         setWidgetValue(committed.widget, committed.input.value, committed.node);
       }
