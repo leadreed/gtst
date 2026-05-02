@@ -26,6 +26,7 @@ from comfy_nodes import (
     _os_action_path,
     path_action_payload,
     preview_asset_payload,
+    preview_selected_asset_payload,
     resolve_path_action_payload,
     schema_metadata_payload,
     selected_browser_asset,
@@ -691,6 +692,31 @@ def test_browser_selection_reconstructs_asset_ref(
     assert json.loads(selected_metadata)["facets"]["asset"] == "caption01"
 
 
+def test_browser_selection_loads_text_asset(tmp_path: Path, monkeypatch: Any) -> None:
+    asset_ref = make_ref(tmp_path, monkeypatch, tree="texts", asset="caption01")
+    saved = SaveGtstText().save("caption from browser", asset_ref, "", False, "")[
+        "result"
+    ][1]
+
+    selected_ref = BrowseGtst().browse(
+        mode="latest only",
+        project="project1",
+        tree="texts",
+        asset="caption01",
+        variant="",
+        subVariant="",
+        version="",
+        tag="",
+        tag_filter_mode="OR",
+        selected_file_path=saved,
+        preview_item_size=140,
+    )["result"][0]
+
+    text, loaded_path, _ = LoadGtstText().load(selected_ref)
+    assert text == "caption from browser"
+    assert loaded_path == saved
+
+
 def test_browser_selection_requires_file(tmp_path: Path, monkeypatch: Any) -> None:
     monkeypatch.setenv("GTST_ROOT", str(tmp_path / "root"))
 
@@ -722,6 +748,22 @@ def test_preview_asset_payload_resolves_browser_item(
     assert payload["item"]["file_path"] == saved
     assert payload["item"]["asset_ref"]["version"] == "v001"
     assert payload["item"]["label"].endswith("v001")
+
+
+def test_preview_selected_asset_payload_resolves_browser_item(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    asset_ref = make_ref(tmp_path, monkeypatch, tree="texts", asset="caption01")
+    saved = SaveGtstText().save("selected text", asset_ref, "", False, "")[
+        "result"
+    ][1]
+
+    payload = preview_selected_asset_payload(saved)
+
+    assert payload["ok"] is True
+    assert payload["item"]["file_path"] == saved
+    assert payload["item"]["media_type"] == "text"
+    assert payload["item"]["preview_text"] == "selected text"
 
 
 def test_preview_asset_payload_fails_cleanly_for_incomplete_ref(

@@ -843,6 +843,34 @@ def preview_asset_payload(values: dict[str, str] | None = None) -> dict[str, Any
     }
 
 
+def preview_selected_asset_payload(file_path: str) -> dict[str, Any]:
+    root = _root()
+    selected = str(_path_inside_root(root, file_path))
+    if not Path(selected).is_file():
+        return {
+            "ok": False,
+            "root_path": str(root.path),
+            "item": None,
+            "error": f"Selected GTST browser file does not exist: {selected}",
+        }
+
+    try:
+        item = _browser_item(root, selected)
+    except GtstError as exc:
+        return {
+            "ok": False,
+            "root_path": str(root.path),
+            "item": None,
+            "error": str(exc),
+        }
+
+    return {
+        "ok": True,
+        "root_path": str(root.path),
+        "item": item,
+    }
+
+
 def selected_browser_asset(selected_file_path: str) -> tuple[dict[str, Any], str, str]:
     selected = selected_file_path.strip()
     if not selected:

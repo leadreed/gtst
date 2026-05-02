@@ -22,6 +22,7 @@ try:
         facet_suggestions_payload,
         path_action_payload,
         preview_asset_payload,
+        preview_selected_asset_payload,
         resolve_path_action_payload,
         schema_metadata_payload,
         set_ready_payload,
@@ -35,6 +36,7 @@ except ImportError:
         facet_suggestions_payload,
         path_action_payload,
         preview_asset_payload,
+        preview_selected_asset_payload,
         resolve_path_action_payload,
         schema_metadata_payload,
         set_ready_payload,
@@ -176,6 +178,15 @@ def _register_routes() -> None:
                 for key, value in dict(body.get("values", {})).items()
             }
             payload = preview_asset_payload(values)
+        except Exception as exc:
+            payload = {"ok": False, "item": None, "error": str(exc)}
+        return web.json_response(payload)
+
+    @PromptServer.instance.routes.post("/gtst/preview_selected_asset")
+    async def gtst_preview_selected_asset(request):  # type: ignore[no-untyped-def]
+        try:
+            body = await request.json()
+            payload = preview_selected_asset_payload(str(body.get("path", "")))
         except Exception as exc:
             payload = {"ok": False, "item": None, "error": str(exc)}
         return web.json_response(payload)
