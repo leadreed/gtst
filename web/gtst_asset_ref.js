@@ -148,11 +148,15 @@ function restoreActiveValue() {
   if (!active) {
     return;
   }
-  const value = active.originalValue ?? "";
-  if (active.input instanceof HTMLInputElement) {
-    active.input.value = value;
+  restoreEditValue(active);
+}
+
+function restoreEditValue(edit) {
+  const value = edit.originalValue ?? "";
+  if (edit.input instanceof HTMLInputElement) {
+    edit.input.value = value;
   }
-  setWidgetValue(active.widget, value, active.node);
+  setWidgetValue(edit.widget, value, edit.node);
 }
 
 function cancelActiveEdit() {
@@ -455,6 +459,44 @@ function closeValueDialog() {
   dialog?.remove();
 }
 
+function commitEditValue(edit) {
+  const value =
+    edit.input instanceof HTMLInputElement
+      ? edit.input.value
+      : String(edit.widget?.value ?? "");
+  setWidgetValue(edit.widget, value, edit.node);
+  if (facetWidgets.includes(edit.field)) {
+    commitFacet(edit.node, edit.field);
+  }
+  notifyCommitted(edit.node, edit.field);
+}
+
+function commitActiveEdit({ closeDialog = false } = {}) {
+  if (!active) {
+    return false;
+  }
+  if (!active.explicitlyCommitted) {
+    active.explicitlyCommitted = true;
+    active.cancelled = false;
+    commitEditValue(active);
+  }
+  hideMenu();
+  if (closeDialog) {
+    closeValueDialog();
+  }
+  return true;
+}
+
+function isValueDialogOkButton(target) {
+  if (!(target instanceof HTMLButtonElement)) {
+    return false;
+  }
+  return (
+    target.closest(".graphdialog") &&
+    target.textContent?.trim().toLocaleLowerCase() === "ok"
+  );
+}
+
 function applySuggestion(index, { closeDialog = false } = {}) {
   if (!active || !menuValues[index]) {
     return false;
@@ -466,16 +508,7 @@ function applySuggestion(index, { closeDialog = false } = {}) {
     active.input.dispatchEvent(new Event("change", { bubbles: true }));
     active.input.focus();
   }
-  setWidgetValue(active.widget, value, active.node);
-  if (facetWidgets.includes(active.field)) {
-    commitFacet(active.node, active.field);
-  }
-  notifyCommitted(active.node, active.field);
-  hideMenu();
-  if (closeDialog) {
-    closeValueDialog();
-  }
-  return true;
+  return commitActiveEdit({ closeDialog });
 }
 
 function chooseSuggestion(index) {
@@ -509,11 +542,14 @@ function activateFacet(node, field, input = null) {
     widget,
     field,
     promptToken,
+    autoCleared: false,
+    explicitlyCommitted: false,
     originalValue: String(widget.value ?? ""),
   };
   if (input instanceof HTMLInputElement) {
     active.input = input;
     if (clearsQueryOnOpen(field)) {
+      active.autoCleared = true;
       input.value = "";
     }
   }
@@ -530,6 +566,8 @@ function setPendingPrompt(node, widget) {
       widget,
       field: widget.name,
       promptToken,
+      autoCleared: false,
+      explicitlyCommitted: false,
       originalValue: String(widget.value ?? ""),
     };
     return;
@@ -627,6 +665,12 @@ function installDocumentListeners() {
       hideMenu();
       return;
     }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      event.stopPropagation();
+      commitActiveEdit({ closeDialog: true });
+      return;
+    }
     if (event.key === "ArrowDown" && menuValues.length) {
       event.preventDefault();
       event.stopPropagation();
@@ -657,21 +701,36 @@ function installDocumentListeners() {
     const committed = active;
     window.setTimeout(() => {
       if (committed.cancelled) {
-        hideMenu();
+        if (active === committed) {
+          hideMenu();
+        }
         return;
       }
-      if (committed.input instanceof HTMLInputElement) {
-        setWidgetValue(committed.widget, committed.input.value, committed.node);
+      if (committed.explicitlyCommitted) {
+        if (active === committed) {
+          hideMenu();
+        }
+        return;
       }
-      if (facetWidgets.includes(committed.field)) {
-        commitFacet(committed.node, committed.field);
+      if (committed.autoCleared) {
+        restoreEditValue(committed);
+        if (active === committed) {
+          hideMenu();
+        }
+        return;
       }
-      notifyCommitted(committed.node, committed.field);
-      hideMenu();
+      commitEditValue(committed);
+      if (active === committed) {
+        hideMenu();
+      }
     }, 100);
   });
 
   document.addEventListener("pointerdown", (event) => {
+    if (isValueDialogOkButton(event.target)) {
+      commitActiveEdit();
+      return;
+    }
     if (menuElement().contains(event.target)) {
       return;
     }
