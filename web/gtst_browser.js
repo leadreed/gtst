@@ -563,6 +563,9 @@ function setWidgetValue(node, name, value) {
   widget.value = value;
   widget.callback?.(value, app.canvas, node, app.canvas?.graph_mouse, {});
   node.setDirtyCanvas?.(true, true);
+  if (isBrowserNode(node) && name === "selected_file_path") {
+    scheduleRefreshLoadPreviewsLinkedTo(node);
+  }
 }
 
 function modeWidget(node) {
@@ -687,6 +690,20 @@ async function previewAssetPayload(values, signal) {
   const response = await api.fetchApi("/gtst/preview_asset", {
     method: "POST",
     body: JSON.stringify({ values }),
+    headers: { "Content-Type": "application/json" },
+    signal,
+  });
+  const payload = response.ok ? await response.json() : {};
+  if (!response.ok) {
+    throw new Error(payload.error || `GTST request failed: ${response.status}`);
+  }
+  return payload;
+}
+
+async function previewSelectedAssetPayload(path, signal) {
+  const response = await api.fetchApi("/gtst/preview_selected_asset", {
+    method: "POST",
+    body: JSON.stringify({ path }),
     headers: { "Content-Type": "application/json" },
     signal,
   });
@@ -1256,12 +1273,19 @@ function renderGrid(node) {
   updateSelectionStatus(node);
 }
 
-function loadPreviewValues(node) {
+function loadPreviewSource(node) {
   const upstream = linkedOriginNode(node);
-  if (!isAssetRefNode(upstream)) {
-    return null;
+  if (isAssetRefNode(upstream)) {
+    return { kind: "values", values: browserValues(upstream) };
   }
-  return browserValues(upstream);
+  if (isBrowserNode(upstream)) {
+    const path = selectedPath(upstream);
+    if (path) {
+      return { kind: "path", path };
+    }
+    return { kind: "browser-missing-selection" };
+  }
+  return null;
 }
 
 function loadPreviewPanelSize(node) {
@@ -1345,9 +1369,19 @@ async function refreshLoadPreview(node) {
   state.resultController = controller;
   state.status.textContent = "Loading preview...";
 
-  const values = loadPreviewValues(node);
-  if (!values) {
+  const source = loadPreviewSource(node);
+  if (!source) {
     state.status.textContent = "Connect GTST Asset Ref";
+    state.previewItem = null;
+    state.previewMode = null;
+    state.body.replaceChildren();
+    if (state.resultController === controller) {
+      state.resultController = null;
+    }
+    return;
+  }
+  if (source.kind === "browser-missing-selection") {
+    state.status.textContent = "Select a GTST browser preview";
     state.previewItem = null;
     state.previewMode = null;
     state.body.replaceChildren();
@@ -1358,7 +1392,10 @@ async function refreshLoadPreview(node) {
   }
 
   try {
-    const payload = await previewAssetPayload(values, controller.signal);
+    const payload =
+      source.kind === "path"
+        ? await previewSelectedAssetPayload(source.path, controller.signal)
+        : await previewAssetPayload(source.values, controller.signal);
     if (requestId !== state.requestId) {
       return;
     }
@@ -1402,6 +1439,14 @@ function scheduleRefreshLoadPreview(node) {
   state.refreshTimer = window.setTimeout(() => {
     refreshLoadPreview(node);
   }, 0);
+}
+
+function scheduleRefreshLoadPreviewsLinkedTo(originNode) {
+  for (const loadNode of loadPreviewNodes) {
+    if (linkedOriginNode(loadNode) === originNode) {
+      scheduleRefreshLoadPreview(loadNode);
+    }
+  }
 }
 
 function scheduleRefreshAllLoadPreviews() {
@@ -1710,11 +1755,7 @@ window.addEventListener("gtst:browser-input-committed", (event) => {
 
 window.addEventListener("gtst:asset-ref-input-committed", (event) => {
   const node = event.detail?.node;
-  for (const loadNode of loadPreviewNodes) {
-    if (linkedOriginNode(loadNode) === node) {
-      scheduleRefreshLoadPreview(loadNode);
-    }
-  }
+  scheduleRefreshLoadPreviewsLinkedTo(node);
 });
 
 app.registerExtension({
